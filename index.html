@@ -1,921 +1,629 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Central de Consultores | Ancore</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Commissioner:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --red:#DB3937;
-    --red-dark:#B32C2A;
-    --black:#000000;
-    --silver:#B8BECA;
-    --ice:#E2EBF7;
-    --white:#FFFFFF;
-    --ink:#14161C;
-    --muted:#6B7280;
-    --bg:#F5F7FB;
-    --card:#FFFFFF;
-    --border:#E4E8F0;
-    --success:#1E9E6B;
-    --warn:#C98A1E;
-  }
-  *{box-sizing:border-box;}
-  body{margin:0;font-family:'Inter',system-ui,sans-serif;background:var(--bg);color:var(--ink);}
-  h1,h2,h3,h4,.brandfont{font-family:'Commissioner',sans-serif;}
-  .app{display:flex;min-height:100vh;}
+import { useState, useEffect, useMemo, useCallback } from "react";
+import {
+  Users, Wallet, TrendingUp, Plus, Pencil, Trash2, X, Search,
+  LayoutDashboard, ClipboardList, CircleDollarSign, ChevronDown, Save
+} from "lucide-react";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
+} from "recharts";
 
-  /* Sidebar */
-  .sidebar{
-    width:236px;flex-shrink:0;background:var(--black);color:var(--white);
-    display:flex;flex-direction:column;position:fixed;top:0;left:0;bottom:0;padding:28px 18px;
-  }
-  .logo{font-family:'Commissioner',sans-serif;font-weight:800;font-size:22px;letter-spacing:1px;color:var(--white);}
-  .logo span{color:var(--red);}
-  .logo-sub{font-size:11px;color:var(--silver);letter-spacing:1.5px;text-transform:uppercase;margin-top:2px;margin-bottom:30px;}
-  nav{display:flex;flex-direction:column;gap:4px;flex:1;}
-  .nav-item{
-    display:flex;align-items:center;gap:10px;background:transparent;border:none;color:var(--silver);
-    padding:11px 12px;border-radius:8px;font-size:14.5px;font-weight:500;text-align:left;cursor:pointer;
-    font-family:'Inter',sans-serif;transition:background .15s,color .15s;
-  }
-  .nav-item:hover{background:#1a1a1a;color:var(--white);}
-  .nav-item.active{background:var(--red);color:var(--white);}
-  .sidebar-footer{font-size:10px;color:var(--silver);letter-spacing:1px;line-height:1.6;border-top:1px solid #262626;padding-top:14px;}
+/* ---------------------------------------------------------------
+   ANCORE — SISTEMA FINANCEIRO DO CONSULTOR
+   Paleta: vermelho #DB3937 · preto #17181A · prata #C8CCD1 · azul gelo #E7F2F6
+--------------------------------------------------------------- */
 
-  main{margin-left:236px;flex:1;padding:32px 40px 60px;max-width:1200px;}
-  .page-title{font-size:26px;font-weight:700;margin:0 0 4px;}
-  .page-sub{color:var(--muted);font-size:14px;margin:0 0 26px;}
+const RED = "#DB3937";
+const RED_DARK = "#B12E2C";
+const BLACK = "#17181A";
+const CHARCOAL = "#232427";
+const SILVER = "#C8CCD1";
+const ICE = "#E7F2F6";
+const ICE_LINE = "#CFE3EC";
 
-  .cards-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:26px;}
-  .stat-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px 20px;}
-  .stat-card .label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:600;}
-  .stat-card .value{font-size:28px;font-weight:800;margin-top:6px;font-family:'Commissioner',sans-serif;}
-  .stat-card .value.red{color:var(--red);}
+const STORAGE_KEY_CARTEIRA = "ancore:carteira-associados";
+const STORAGE_KEY_FINANCEIRO = "ancore:financeiro-mensal";
 
-  .panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;margin-bottom:22px;}
-  .panel h3{margin:0 0 16px;font-size:16px;font-weight:700;display:flex;align-items:center;justify-content:space-between;}
+const ORIGEM_OPTS = ["Indicação", "Prospecção ativa", "Rede social", "Panfletagem", "Loja parceira", "Outro"];
+const PAGAMENTO_OPTS = ["Boleto", "Pix", "Cartão de crédito", "Débito automático"];
 
-  /* Funnel */
-  .funnel-row{display:flex;flex-direction:column;gap:10px;}
-  .funnel-stage{display:flex;align-items:center;gap:14px;}
-  .funnel-stage .stage-label{width:120px;font-size:12.5px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
-  .funnel-bar-track{flex:1;background:var(--ice);border-radius:8px;height:34px;position:relative;overflow:hidden;}
-  .funnel-bar-fill{height:100%;border-radius:8px;background:linear-gradient(90deg,var(--red),var(--red-dark));display:flex;align-items:center;padding-left:12px;color:#fff;font-weight:700;font-size:14px;transition:width .4s;}
-  .funnel-stage .stage-count{width:56px;text-align:right;font-weight:700;font-size:14px;}
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
 
-  table{width:100%;border-collapse:collapse;font-size:13.5px;}
-  th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;padding:8px 10px;border-bottom:2px solid var(--border);}
-  td{padding:10px 10px;border-bottom:1px solid var(--border);}
-  tr.clickable{cursor:pointer;}
-  tr.clickable:hover{background:var(--ice);}
-  .rank-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--ice);color:var(--red-dark);font-weight:800;font-size:12px;}
-  .rank-num.top1{background:var(--red);color:#fff;}
+function toNumber(v) {
+  if (v === "" || v === null || v === undefined) return 0;
+  const n = typeof v === "number" ? v : parseFloat(String(v).replace(/\./g, "").replace(",", "."));
+  return isNaN(n) ? 0 : n;
+}
 
-  .btn{background:var(--red);color:#fff;border:none;padding:9px 16px;border-radius:8px;font-size:13.5px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;}
-  .btn:hover{background:var(--red-dark);}
-  .btn.secondary{background:var(--white);color:var(--ink);border:1px solid var(--border);}
-  .btn.secondary:hover{background:var(--ice);}
-  .btn.small{padding:6px 10px;font-size:12.5px;}
-  .btn.danger{background:var(--white);color:var(--red-dark);border:1px solid var(--red);}
-  .btn.danger:hover{background:#FCEBEB;}
+function formatBRL(n) {
+  return (n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
 
-  .toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:12px;flex-wrap:wrap;}
-  .search-input,input[type=text],input[type=date],input[type=number],input[type=tel],select,textarea{
-    font-family:'Inter',sans-serif;font-size:13.5px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;background:#fff;color:var(--ink);width:100%;
-  }
-  textarea{resize:vertical;min-height:70px;}
-  .field{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;}
-  .field label{font-size:12px;font-weight:600;color:var(--muted);}
-  .field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+function formatDateBR(iso) {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+}
 
-  .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.3px;}
-  .badge.ativo{background:#E4F6ED;color:var(--success);}
-  .badge.afastado{background:#FDF3E2;color:var(--warn);}
-  .badge.desligado{background:#FBE7E6;color:var(--red-dark);}
-  .badge.pendente{background:#FDF3E2;color:var(--warn);}
-  .badge.concluida{background:#E4F6ED;color:var(--success);}
+function monthLabel(ym) {
+  if (!ym) return "—";
+  const [y, m] = ym.split("-");
+  const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+  const idx = parseInt(m, 10) - 1;
+  return `${meses[idx] ?? m}/${y.slice(2)}`;
+}
 
-  .empty{color:var(--muted);font-size:13.5px;padding:20px 4px;text-align:center;}
+/* ---------------------------------------------------------------
+   Campo genérico
+--------------------------------------------------------------- */
+function Field({ label, children, span }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 6, gridColumn: span ? `span ${span}` : undefined }}>
+      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B7076" }}>
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
 
-  /* Modal */
-  .modal-overlay{position:fixed;inset:0;background:rgba(10,10,15,.55);display:none;align-items:flex-start;justify-content:center;padding:40px 20px;overflow-y:auto;z-index:100;}
-  .modal-overlay.open{display:flex;}
-  .modal{background:#fff;border-radius:16px;width:100%;max-width:640px;padding:26px 28px 28px;position:relative;}
-  .modal.wide{max-width:760px;}
-  .modal-close{position:absolute;top:16px;right:18px;background:none;border:none;font-size:20px;cursor:pointer;color:var(--muted);}
-  .modal h2{margin:0 0 4px;font-size:20px;}
-  .modal .modal-sub{color:var(--muted);font-size:13px;margin-bottom:18px;}
-
-  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:18px;}
-  .tab-btn{background:none;border:none;padding:9px 14px;font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;font-family:'Inter',sans-serif;}
-  .tab-btn.active{color:var(--red);border-bottom-color:var(--red);}
-
-  .timeline-item{border-left:2px solid var(--ice);padding:2px 0 16px 16px;position:relative;margin-left:4px;}
-  .timeline-item::before{content:'';position:absolute;left:-5px;top:4px;width:8px;height:8px;border-radius:50%;background:var(--red);}
-  .timeline-item .ti-head{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px;}
-  .timeline-item .ti-type{font-weight:700;color:var(--ink);}
-  .timeline-item .ti-text{font-size:13.5px;line-height:1.5;white-space:pre-wrap;}
-
-  .checklist-item{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--border);}
-  .checklist-item input[type=checkbox]{width:18px;height:18px;accent-color:var(--red);}
-  .checklist-item .cat{font-size:11px;color:var(--muted);background:var(--ice);padding:2px 8px;border-radius:10px;margin-left:auto;}
-
-  .alert-item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);font-size:13.5px;}
-  .alert-item:last-child{border-bottom:none;}
-
-  /* Dashboard modo TV */
-  .tv-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:18px;margin-bottom:26px;}
-  .tv-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:22px 24px;}
-  .tv-card .label{font-size:14px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;font-weight:700;}
-  .tv-card .value{font-size:48px;font-weight:800;margin-top:8px;font-family:'Commissioner',sans-serif;line-height:1;}
-  .tv-card .value.red{color:var(--red);}
-  .tv-card .value.success{color:var(--success);}
-  .tv-card.meta{border:2px solid var(--red);}
-
-  .meta-bar-track{background:var(--ice);border-radius:10px;height:14px;overflow:hidden;margin-top:12px;}
-  .meta-bar-fill{height:100%;border-radius:10px;background:linear-gradient(90deg,var(--red),var(--red-dark));transition:width .4s;}
-
-  .tv-panel-title{font-size:22px;font-weight:800;margin:0 0 18px;font-family:'Commissioner',sans-serif;display:flex;align-items:center;justify-content:space-between;}
-  .tv-table{width:100%;border-collapse:collapse;}
-  .tv-table th{text-align:left;font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);font-weight:700;padding:14px 14px;border-bottom:2px solid var(--border);}
-  .tv-table td{padding:16px 14px;border-bottom:1px solid var(--border);font-size:20px;}
-  .tv-table tr:last-child td{border-bottom:none;}
-  .tv-rank-num{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:50%;background:var(--ice);color:var(--red-dark);font-weight:800;font-size:16px;}
-  .tv-rank-num.top1{background:var(--red);color:#fff;}
-  .tv-rank-num.top2{background:var(--red-dark);color:#fff;opacity:.8;}
-  .tv-rank-num.top3{background:var(--black);color:#fff;opacity:.75;}
-
-  .tv-funnel .stage-label{width:170px;font-size:15px;}
-  .tv-funnel .funnel-bar-track{height:44px;}
-  .tv-funnel .funnel-bar-fill{font-size:17px;}
-  .tv-funnel .stage-count{width:70px;font-size:17px;}
-
-  .btn-meta-edit{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;text-decoration:underline;font-family:'Inter',sans-serif;}
-  .btn-meta-edit:hover{color:var(--ink);}
-
-  @media(max-width:880px){
-    .sidebar{width:100%;height:auto;position:relative;flex-direction:row;align-items:center;padding:14px 16px;}
-    .sidebar nav{flex-direction:row;overflow-x:auto;}
-    .sidebar-footer{display:none;}
-    main{margin-left:0;padding:20px 16px 50px;}
-    .field-row{grid-template-columns:1fr;}
-  }
-</style>
-</head>
-<body>
-
-<div class="app">
-  <aside class="sidebar">
-    <div>
-      <div class="logo">ANCO<span>RE</span></div>
-      <div class="logo-sub">Central de Consultores</div>
-    </div>
-    <nav id="nav"></nav>
-    <div class="sidebar-footer">RAYAN CASTRO<br>GESTOR ANCORE</div>
-  </aside>
-  <main id="main"></main>
-</div>
-
-<div class="modal-overlay" id="modalOverlay">
-  <div class="modal" id="modalBox"></div>
-</div>
-
-<script>
-/* ---------------------------------------------------------
-   ESTADO E PERSISTÊNCIA
---------------------------------------------------------- */
-const STORAGE_KEY = 'ancore-central-consultores';
-let data = {
-  consultants: [],
-  kpis: {},              // key: consultantId__YYYY-MM -> {leads,contatos,propostas,vendas,ticketMedio}
-  prontuario: [],        // {id, consultantId, data, tipo, texto}
-  trainingCatalog: [],   // {id, titulo, categoria}
-  trainingProgress: {},  // consultantId -> {trainingId: {completed, data}}
-  agenda: [],            // {id, data, horario, consultantId, assunto, notas, status}
-  metas: {}              // key: YYYY-MM -> meta de vendas do time (numero de vendas)
+const inputStyle = {
+  border: `1px solid ${SILVER}`,
+  borderRadius: 8,
+  padding: "9px 11px",
+  fontSize: 14,
+  color: BLACK,
+  background: "#fff",
+  outline: "none",
+  fontFamily: "inherit",
+  width: "100%",
+  boxSizing: "border-box",
 };
-let currentView = 'dashboard';
-let saveTimer = null;
 
-function uid(){ return 'id_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8); }
+function TextInput(props) {
+  return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
+}
+function Select({ options, ...props }) {
+  return (
+    <select {...props} style={{ ...inputStyle, ...(props.style || {}) }}>
+      <option value="">Selecionar…</option>
+      {options.map((o) => (
+        <option key={o} value={o}>{o}</option>
+      ))}
+    </select>
+  );
+}
 
-async function loadData(){
-  try{
-    const res = await window.storage.get(STORAGE_KEY, false);
-    if(res && res.value){
-      const parsed = JSON.parse(res.value);
-      data = Object.assign(data, parsed);
+/* ---------------------------------------------------------------
+   Modal
+--------------------------------------------------------------- */
+function Modal({ title, onClose, children, wide }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(23,24,26,0.55)",
+        display: "flex", alignItems: "flex-start", justifyContent: "center",
+        padding: "5vh 16px", zIndex: 50, overflowY: "auto",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff", borderRadius: 14, width: "100%",
+          maxWidth: wide ? 780 : 560, boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{
+          background: BLACK, padding: "16px 22px", display: "flex",
+          alignItems: "center", justifyContent: "space-between",
+          borderTop: `3px solid ${RED}`,
+        }}>
+          <h2 style={{ color: "#fff", fontSize: 16, fontWeight: 700, margin: 0, letterSpacing: "0.02em" }}>{title}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: SILVER, padding: 4 }}>
+            <X size={20} />
+          </button>
+        </div>
+        <div style={{ padding: 22 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------
+   Formulário — Associado
+--------------------------------------------------------------- */
+const EMPTY_ASSOCIADO = {
+  dataContrato: "", nomeCompleto: "", telefone: "", cpf: "", aniversario: "",
+  placa: "", origem: "", adesao: "", formaPagamento: "", consultoria: "",
+  valorPrimeiraMensalidade: "", dataPrimeiroBoleto: "", planoEscolhido: "",
+  brindeDaSemana: "", observacoes: "",
+};
+
+function AssociadoForm({ initial, onSave, onCancel }) {
+  const [f, setF] = useState(initial || EMPTY_ASSOCIADO);
+  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <Field label="Nome completo" span={2}>
+          <TextInput value={f.nomeCompleto} onChange={set("nomeCompleto")} placeholder="Nome do associado" />
+        </Field>
+        <Field label="Data de contrato">
+          <TextInput type="date" value={f.dataContrato} onChange={set("dataContrato")} />
+        </Field>
+        <Field label="Aniversário">
+          <TextInput type="date" value={f.aniversario} onChange={set("aniversario")} />
+        </Field>
+        <Field label="Telefone">
+          <TextInput value={f.telefone} onChange={set("telefone")} placeholder="(00) 00000-0000" />
+        </Field>
+        <Field label="CPF">
+          <TextInput value={f.cpf} onChange={set("cpf")} placeholder="000.000.000-00" />
+        </Field>
+        <Field label="Placa">
+          <TextInput value={f.placa} onChange={set("placa")} placeholder="ABC1D23" style={{ textTransform: "uppercase" }} />
+        </Field>
+        <Field label="Origem">
+          <Select options={ORIGEM_OPTS} value={f.origem} onChange={set("origem")} />
+        </Field>
+        <Field label="Forma de pagamento">
+          <Select options={PAGAMENTO_OPTS} value={f.formaPagamento} onChange={set("formaPagamento")} />
+        </Field>
+        <Field label="Plano escolhido">
+          <TextInput value={f.planoEscolhido} onChange={set("planoEscolhido")} placeholder="Ex: Plano Completo" />
+        </Field>
+        <Field label="Adesão (R$)">
+          <TextInput value={f.adesao} onChange={set("adesao")} placeholder="0,00" inputMode="decimal" />
+        </Field>
+        <Field label="Consultoria (R$)">
+          <TextInput value={f.consultoria} onChange={set("consultoria")} placeholder="0,00" inputMode="decimal" />
+        </Field>
+        <Field label="Valor 1ª mensalidade (R$)">
+          <TextInput value={f.valorPrimeiraMensalidade} onChange={set("valorPrimeiraMensalidade")} placeholder="0,00" inputMode="decimal" />
+        </Field>
+        <Field label="Data do 1º boleto">
+          <TextInput type="date" value={f.dataPrimeiroBoleto} onChange={set("dataPrimeiroBoleto")} />
+        </Field>
+        <Field label="Brinde da semana">
+          <TextInput value={f.brindeDaSemana} onChange={set("brindeDaSemana")} placeholder="Ex: Kit automotivo" />
+        </Field>
+        <Field label="Observações" span={2}>
+          <textarea value={f.observacoes} onChange={set("observacoes")} rows={3} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
+        </Field>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
+        <button onClick={onCancel} style={btnGhost}>Cancelar</button>
+        <button
+          onClick={() => f.nomeCompleto.trim() && onSave(f)}
+          style={btnPrimary}
+        >
+          <Save size={15} /> Salvar associado
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------
+   Formulário — Financeiro mensal
+--------------------------------------------------------------- */
+const EMPTY_FIN = {
+  mes: "", adesao: "", premiacaoMensal: "", premiacaoSemanal: "", consultoria: "",
+  planoDeCarreira: "", recorrenciaPlacasAtivas: "", pagamentoIndicacoes: "",
+};
+
+function FinanceiroForm({ initial, onSave, onCancel }) {
+  const [f, setF] = useState(initial || EMPTY_FIN);
+  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
+
+  const soma =
+    toNumber(f.adesao) + toNumber(f.premiacaoMensal) + toNumber(f.premiacaoSemanal) +
+    toNumber(f.consultoria) + toNumber(f.planoDeCarreira) + toNumber(f.recorrenciaPlacasAtivas) +
+    toNumber(f.pagamentoIndicacoes);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <Field label="Mês" span={2}>
+          <TextInput type="month" value={f.mes} onChange={set("mes")} />
+        </Field>
+        <Field label="Adesão (R$)">
+          <TextInput value={f.adesao} onChange={set("adesao")} placeholder="0,00" inputMode="decimal" />
+        </Field>
+        <Field label="Consultoria (R$)">
+          <TextInput value={f.consultoria} onChange={set("consultoria")} placeholder="0,00" inputMode="decimal" />
+        </Field>
+        <Field label="Premiação mensal (R$)">
+          <TextInput value={f.premiacaoMensal} onChange={set("premiacaoMensal")} placeholder="0,00" inputMode="decimal" />
+        </Field>
+        <Field label="Premiação semanal (R$)">
+          <TextInput value={f.premiacaoSemanal} onChange={set("premiacaoSemanal")} placeholder="0,00" inputMode="decimal" />
+        </Field>
+        <Field label="Plano de carreira (R$)">
+          <TextInput value={f.planoDeCarreira} onChange={set("planoDeCarreira")} placeholder="0,00" inputMode="decimal" />
+        </Field>
+        <Field label="Recorrência placas ativas (R$)">
+          <TextInput value={f.recorrenciaPlacasAtivas} onChange={set("recorrenciaPlacasAtivas")} placeholder="0,00" inputMode="decimal" />
+        </Field>
+        <Field label="Pagamento de indicações (R$)" span={2}>
+          <TextInput value={f.pagamentoIndicacoes} onChange={set("pagamentoIndicacoes")} placeholder="0,00" inputMode="decimal" />
+        </Field>
+      </div>
+      <div style={{
+        background: ICE, border: `1px solid ${ICE_LINE}`, borderRadius: 10,
+        padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center",
+      }}>
+        <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#3A5A66" }}>
+          Soma final total
+        </span>
+        <span style={{ fontSize: 20, fontWeight: 800, color: BLACK }}>{formatBRL(soma)}</span>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+        <button onClick={onCancel} style={btnGhost}>Cancelar</button>
+        <button
+          onClick={() => f.mes && onSave({ ...f, somaFinalTotal: soma })}
+          style={btnPrimary}
+        >
+          <Save size={15} /> Salvar mês
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const btnPrimary = {
+  background: RED, color: "#fff", border: "none", borderRadius: 8,
+  padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+  display: "flex", alignItems: "center", gap: 8, letterSpacing: "0.02em",
+};
+const btnGhost = {
+  background: "#fff", color: BLACK, border: `1px solid ${SILVER}`, borderRadius: 8,
+  padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+};
+
+/* ---------------------------------------------------------------
+   KPI Card
+--------------------------------------------------------------- */
+function KpiCard({ icon: Icon, label, value, accent }) {
+  return (
+    <div style={{
+      background: "#fff", borderRadius: 12, padding: "18px 20px", flex: 1, minWidth: 200,
+      border: `1px solid ${SILVER}`, borderTop: `3px solid ${accent || RED}`,
+      display: "flex", flexDirection: "column", gap: 10,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#6B7076" }}>
+        <Icon size={16} />
+        <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
+      </div>
+      <span style={{ fontSize: 24, fontWeight: 800, color: BLACK }}>{value}</span>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------
+   App principal
+--------------------------------------------------------------- */
+export default function App() {
+  const [tab, setTab] = useState("dashboard");
+  const [associados, setAssociados] = useState([]);
+  const [financeiro, setFinanceiro] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+  const [modalAssociado, setModalAssociado] = useState(null); // { mode: 'new'|'edit', data }
+  const [modalFin, setModalFin] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const a = await window.storage.get(STORAGE_KEY_CARTEIRA);
+        if (a && a.value) setAssociados(JSON.parse(a.value));
+      } catch (e) { /* sem dados ainda */ }
+      try {
+        const f = await window.storage.get(STORAGE_KEY_FINANCEIRO);
+        if (f && f.value) setFinanceiro(JSON.parse(f.value));
+      } catch (e) { /* sem dados ainda */ }
+      setLoading(false);
+    })();
+  }, []);
+
+  const persistAssociados = useCallback(async (list) => {
+    setAssociados(list);
+    try { await window.storage.set(STORAGE_KEY_CARTEIRA, JSON.stringify(list)); }
+    catch (e) { console.error("Erro ao salvar carteira", e); }
+  }, []);
+
+  const persistFinanceiro = useCallback(async (list) => {
+    setFinanceiro(list);
+    try { await window.storage.set(STORAGE_KEY_FINANCEIRO, JSON.stringify(list)); }
+    catch (e) { console.error("Erro ao salvar financeiro", e); }
+  }, []);
+
+  const saveAssociado = (data) => {
+    if (data.id) {
+      persistAssociados(associados.map((a) => (a.id === data.id ? data : a)));
+    } else {
+      persistAssociados([{ ...data, id: uid() }, ...associados]);
     }
-  }catch(e){
-    console.log('Nenhum dado salvo ainda, iniciando vazio.');
-  }
-  render();
-}
-
-function save(){
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(async ()=>{
-    try{
-      await window.storage.set(STORAGE_KEY, JSON.stringify(data), false);
-    }catch(e){
-      console.error('Erro ao salvar:', e);
+    setModalAssociado(null);
+  };
+  const deleteAssociado = (id) => {
+    if (confirm("Remover este associado da carteira?")) {
+      persistAssociados(associados.filter((a) => a.id !== id));
     }
-  }, 150);
-}
+  };
 
-/* ---------------------------------------------------------
-   HELPERS
---------------------------------------------------------- */
-const MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-function currentMonthKey(){
-  const d = new Date();
-  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
-}
-function monthLabel(key){
-  const [y,m] = key.split('-');
-  return MESES[parseInt(m,10)-1] + '/' + y;
-}
-function fmtDate(iso){
-  if(!iso) return '—';
-  const d = new Date(iso + 'T00:00:00');
-  return String(d.getDate()).padStart(2,'0') + '/' + String(d.getMonth()+1).padStart(2,'0') + '/' + d.getFullYear();
-}
-function todayISO(){
-  return new Date().toISOString().slice(0,10);
-}
-function money(v){
-  return (v||0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
-}
-function kpiKey(consultantId, monthKey){ return consultantId + '__' + monthKey; }
-function getKpi(consultantId, monthKey){
-  return data.kpis[kpiKey(consultantId, monthKey)] || {leads:0,contatos:0,propostas:0,vendas:0,ticketMedio:0};
-}
-function consultantName(id){
-  const c = data.consultants.find(c=>c.id===id);
-  return c ? c.nome : '—';
-}
-function escapeHtml(str){
-  return (str||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-}
+  const saveFin = (data) => {
+    if (data.id) {
+      persistFinanceiro(financeiro.map((f) => (f.id === data.id ? data : f)));
+    } else {
+      const exists = financeiro.some((f) => f.mes === data.mes);
+      if (exists) {
+        persistFinanceiro(financeiro.map((f) => (f.mes === data.mes ? { ...data, id: f.id } : f)));
+      } else {
+        persistFinanceiro([{ ...data, id: uid() }, ...financeiro]);
+      }
+    }
+    setModalFin(null);
+  };
+  const deleteFin = (id) => {
+    if (confirm("Remover este mês do financeiro?")) {
+      persistFinanceiro(financeiro.filter((f) => f.id !== id));
+    }
+  };
 
-/* ---------------------------------------------------------
-   NAVEGAÇÃO
---------------------------------------------------------- */
-const NAV_ITEMS = [
-  {id:'dashboard', label:'Dashboard'},
-  {id:'consultores', label:'Consultores'},
-  {id:'treinamentos', label:'Treinamentos'},
-  {id:'agenda', label:'Agenda'}
-];
+  const filteredAssociados = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    const list = !s
+      ? associados
+      : associados.filter((a) =>
+          [a.nomeCompleto, a.cpf, a.placa, a.telefone].some((v) => (v || "").toLowerCase().includes(s))
+        );
+    return [...list].sort((a, b) => (b.dataContrato || "").localeCompare(a.dataContrato || ""));
+  }, [associados, search]);
 
-function renderNav(){
-  const nav = document.getElementById('nav');
-  nav.innerHTML = NAV_ITEMS.map(item =>
-    `<button class="nav-item ${currentView===item.id?'active':''}" data-nav="${item.id}">${item.label}</button>`
-  ).join('');
-  nav.querySelectorAll('[data-nav]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{ currentView = btn.dataset.nav; render(); });
-  });
-}
+  const sortedFin = useMemo(
+    () => [...financeiro].sort((a, b) => (b.mes || "").localeCompare(a.mes || "")),
+    [financeiro]
+  );
 
-function render(){
-  renderNav();
-  const main = document.getElementById('main');
-  if(currentView==='dashboard') main.innerHTML = viewDashboard();
-  else if(currentView==='consultores') main.innerHTML = viewConsultores();
-  else if(currentView==='treinamentos') main.innerHTML = viewTreinamentos();
-  else if(currentView==='agenda') main.innerHTML = viewAgenda();
-  attachViewHandlers();
-}
+  const totalAdesoesCarteira = associados.reduce((s, a) => s + toNumber(a.adesao), 0);
+  const totalFinAcumulado = financeiro.reduce((s, f) => s + toNumber(f.somaFinalTotal), 0);
+  const mediaMensal = financeiro.length ? totalFinAcumulado / financeiro.length : 0;
+  const chartData = [...financeiro]
+    .sort((a, b) => (a.mes || "").localeCompare(b.mes || ""))
+    .slice(-12)
+    .map((f) => ({ mes: monthLabel(f.mes), total: toNumber(f.somaFinalTotal) }));
 
-/* ---------------------------------------------------------
-   DASHBOARD
---------------------------------------------------------- */
-function viewDashboard(){
-  const mk = currentMonthKey();
-  const ativos = data.consultants.filter(c=>c.status==='Ativo');
-  let totals = {leads:0,propostas:0,vendas:0};
-  ativos.forEach(c=>{
-    const k = getKpi(c.id, mk);
-    totals.leads += Number(k.leads)||0;
-    totals.propostas += Number(k.propostas)||0;
-    totals.vendas += Number(k.vendas)||0;
-  });
-  const conv = totals.propostas>0 ? ((totals.vendas/totals.propostas)*100).toFixed(1) : '0.0';
-
-  const meta = Number(data.metas[mk])||0;
-  const faltam = Math.max(meta - totals.vendas, 0);
-  const metaPct = meta>0 ? Math.min((totals.vendas/meta)*100,100) : 0;
-
-  const maxVal = Math.max(totals.leads, totals.propostas, totals.vendas, 1);
-  const stages = [
-    {label:'Leads', val: totals.leads},
-    {label:'Cotações', val: totals.propostas},
-    {label:'Vendas', val: totals.vendas}
+  const NAV = [
+    { key: "dashboard", label: "Painel", icon: LayoutDashboard },
+    { key: "carteira", label: "Carteira de associados", icon: Users },
+    { key: "financeiro", label: "Financeiro mensal", icon: Wallet },
   ];
 
-  const ranking = ativos.map(c=>{
-    const k = getKpi(c.id, mk);
-    return {id:c.id, nome:c.nome, vendas:Number(k.vendas)||0, propostas:Number(k.propostas)||0};
-  }).sort((a,b)=>b.vendas-a.vendas);
+  return (
+    <div style={{
+      fontFamily: "'Commissioner', Inter, system-ui, -apple-system, sans-serif",
+      background: "#F4F5F6", minHeight: "100%", color: BLACK,
+    }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Commissioner:wght@400;600;700;800&display=swap');`}</style>
 
-  return `
-    <h1 class="page-title">Dashboard</h1>
-    <p class="page-sub">Visão geral do time em ${monthLabel(mk)}</p>
-
-    <div class="tv-cards">
-      <div class="tv-card"><div class="label">Consultores ativos</div><div class="value">${ativos.length}</div></div>
-      <div class="tv-card"><div class="label">Cotações realizadas</div><div class="value">${totals.propostas}</div></div>
-      <div class="tv-card"><div class="label">Conversão cotações→vendas</div><div class="value">${conv}%</div></div>
-      <div class="tv-card meta">
-        <div class="label">Meta de vendas &nbsp;<button class="btn-meta-edit" id="btnEditarMeta">editar</button></div>
-        <div class="value">${meta>0?meta:'—'}</div>
-      </div>
-      <div class="tv-card"><div class="label">Vendas feitas</div><div class="value success">${totals.vendas}</div></div>
-      <div class="tv-card"><div class="label">Faltam</div><div class="value red">${meta>0?faltam:'—'}</div>
-        ${meta>0?`<div class="meta-bar-track"><div class="meta-bar-fill" style="width:${metaPct}%"></div></div>`:''}
-      </div>
-    </div>
-
-    <div class="panel">
-      <h3>Funil comercial do time — ${monthLabel(mk)}</h3>
-      <div class="funnel-row tv-funnel">
-        ${stages.map(s=>`
-          <div class="funnel-stage">
-            <div class="stage-label">${s.label}</div>
-            <div class="funnel-bar-track">
-              <div class="funnel-bar-fill" style="width:${Math.max((s.val/maxVal)*100,4)}%">${s.val>0?s.val:''}</div>
+      {/* Header */}
+      <div style={{ background: BLACK, borderBottom: `4px solid ${RED}` }}>
+        <div style={{ maxWidth: 1180, margin: "0 auto", padding: "18px 22px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+            <div>
+              <div style={{ color: RED, fontSize: 11, fontWeight: 800, letterSpacing: "0.14em" }}>ANCORE PROTEÇÃO VEICULAR</div>
+              <h1 style={{ color: "#fff", fontSize: 20, fontWeight: 800, margin: "2px 0 0", letterSpacing: "0.01em" }}>
+                Sistema Financeiro do Consultor
+              </h1>
             </div>
-            <div class="stage-count">${s.val}</div>
+            <nav style={{ display: "flex", gap: 6 }}>
+              {NAV.map((n) => {
+                const Icon = n.icon;
+                const active = tab === n.key;
+                return (
+                  <button
+                    key={n.key}
+                    onClick={() => setTab(n.key)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 7,
+                      background: active ? RED : "transparent",
+                      color: active ? "#fff" : SILVER,
+                      border: active ? "none" : `1px solid #3A3B3E`,
+                      borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                    }}
+                  >
+                    <Icon size={15} /> {n.label}
+                  </button>
+                );
+              })}
+            </nav>
           </div>
-        `).join('')}
-      </div>
-    </div>
-
-    <div class="panel" style="margin-bottom:0;">
-      <div class="tv-panel-title">🏆 Ranking do mês (vendas)</div>
-      ${ranking.length===0 ? '<div class="empty">Nenhum consultor ativo cadastrado ainda.</div>' : `
-      <table class="tv-table">
-        <thead><tr><th>#</th><th>Consultor</th><th>Cotações</th><th>Vendas</th></tr></thead>
-        <tbody>
-          ${ranking.map((r,i)=>`
-            <tr class="clickable" data-open-consultant="${r.id}">
-              <td><span class="tv-rank-num ${i===0?'top1':i===1?'top2':i===2?'top3':''}">${i+1}</span></td>
-              <td><strong>${escapeHtml(r.nome)}</strong></td>
-              <td>${r.propostas}</td>
-              <td><strong>${r.vendas}</strong></td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>`}
-    </div>
-  `;
-}
-
-function formMetaModal(){
-  const mk = currentMonthKey();
-  const atual = Number(data.metas[mk])||0;
-  return `
-    <button class="modal-close" data-close-modal>✕</button>
-    <h2>Meta de vendas — ${monthLabel(mk)}</h2>
-    <div class="modal-sub">Defina a meta de vendas do time para este mês.</div>
-    <div class="field"><label>Meta (número de vendas)</label><input type="number" min="0" id="m_meta" value="${atual}"></div>
-    <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end;">
-      <button class="btn secondary" data-close-modal>Cancelar</button>
-      <button class="btn" id="btnSalvarMeta">Salvar</button>
-    </div>
-  `;
-}
-
-/* ---------------------------------------------------------
-   CONSULTORES (lista)
---------------------------------------------------------- */
-function viewConsultores(){
-  const rows = data.consultants;
-  return `
-    <h1 class="page-title">Consultores</h1>
-    <p class="page-sub">Cadastro e acompanhamento individual do time</p>
-
-    <div class="toolbar">
-      <div></div>
-      <button class="btn" id="btnNovoConsultor">+ Novo consultor</button>
-    </div>
-
-    <div class="panel">
-      ${rows.length===0 ? '<div class="empty">Nenhum consultor cadastrado. Clique em "Novo consultor" para começar.</div>' : `
-      <table>
-        <thead><tr><th>Nome</th><th>Nível</th><th>Perfil comportamental</th><th>Maturidade</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-          ${rows.map(c=>`
-            <tr class="clickable" data-open-consultant="${c.id}">
-              <td><strong>${escapeHtml(c.nome)}</strong></td>
-              <td>${escapeHtml(c.nivel||'—')}</td>
-              <td>${escapeHtml(c.perfilComportamental||'—')}</td>
-              <td>${escapeHtml(c.maturidade||'—')}</td>
-              <td><span class="badge ${statusClass(c.status)}">${c.status}</span></td>
-              <td style="text-align:right;"><button class="btn small secondary" data-open-consultant="${c.id}">Abrir</button></td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>`}
-    </div>
-  `;
-}
-function statusClass(s){
-  if(s==='Ativo') return 'ativo';
-  if(s==='Afastado') return 'afastado';
-  return 'desligado';
-}
-
-function formConsultorModal(consultant){
-  const isEdit = !!consultant;
-  const c = consultant || {nome:'',nivel:'',status:'Ativo',perfilComportamental:'',maturidade:'',gargalo:''};
-  return `
-    <button class="modal-close" data-close-modal>✕</button>
-    <h2>${isEdit?'Editar consultor':'Novo consultor'}</h2>
-    <div class="modal-sub">${isEdit?'Atualize os dados do consultor.':'Preencha os dados básicos para cadastrar.'}</div>
-    <div class="field"><label>Nome completo</label><input type="text" id="f_nome" value="${escapeHtml(c.nome)}" placeholder="Ex: João Silva"></div>
-    <div class="field-row">
-      <div class="field"><label>Nível / cargo</label><input type="text" id="f_nivel" value="${escapeHtml(c.nivel)}" placeholder="Ex: Consultor Pleno"></div>
-      <div class="field"><label>Status</label>
-        <select id="f_status">
-          <option ${c.status==='Ativo'?'selected':''}>Ativo</option>
-          <option ${c.status==='Afastado'?'selected':''}>Afastado</option>
-          <option ${c.status==='Desligado'?'selected':''}>Desligado</option>
-        </select>
-      </div>
-    </div>
-    <div class="field-row">
-      <div class="field"><label>Perfil comportamental</label>
-        <select id="f_perfil">
-          <option value="" ${!c.perfilComportamental?'selected':''}>Selecione...</option>
-          <option value="Dominante" ${c.perfilComportamental==='Dominante'?'selected':''}>Dominante</option>
-          <option value="Influente" ${c.perfilComportamental==='Influente'?'selected':''}>Influente</option>
-          <option value="Estável" ${c.perfilComportamental==='Estável'?'selected':''}>Estável</option>
-          <option value="Conforme" ${c.perfilComportamental==='Conforme'?'selected':''}>Conforme</option>
-        </select>
-      </div>
-      <div class="field"><label>Nível de maturidade</label>
-        <select id="f_maturidade">
-          <option value="" ${!c.maturidade?'selected':''}>Selecione...</option>
-          <option value="M1" ${c.maturidade==='M1'?'selected':''}>M1</option>
-          <option value="M2" ${c.maturidade==='M2'?'selected':''}>M2</option>
-          <option value="M3" ${c.maturidade==='M3'?'selected':''}>M3</option>
-          <option value="M4" ${c.maturidade==='M4'?'selected':''}>M4</option>
-        </select>
-      </div>
-    </div>
-    <div class="field"><label>Principal gargalo</label><textarea id="f_gargalo" placeholder="Ex: Dificuldade em contornar objeções de preço">${escapeHtml(c.gargalo||'')}</textarea></div>
-    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
-      ${isEdit?'<button class="btn danger" id="btnExcluirConsultor">Excluir</button>':''}
-      <button class="btn secondary" data-close-modal>Cancelar</button>
-      <button class="btn" id="btnSalvarConsultor">Salvar</button>
-    </div>
-  `;
-}
-
-function openConsultorForm(consultantId){
-  const c = consultantId ? data.consultants.find(x=>x.id===consultantId) : null;
-  openModal(formConsultorModal(c), 'default');
-  document.getElementById('btnSalvarConsultor').addEventListener('click', ()=>{
-    const nome = document.getElementById('f_nome').value.trim();
-    if(!nome){ alert('Informe o nome do consultor.'); return; }
-    const payload = {
-      nome,
-      nivel: document.getElementById('f_nivel').value.trim(),
-      status: document.getElementById('f_status').value,
-      perfilComportamental: document.getElementById('f_perfil').value,
-      maturidade: document.getElementById('f_maturidade').value,
-      gargalo: document.getElementById('f_gargalo').value.trim()
-    };
-    if(c){
-      Object.assign(c, payload);
-    }else{
-      data.consultants.push(Object.assign({id: uid()}, payload));
-    }
-    save();
-    closeModal();
-    render();
-  });
-  if(c){
-    document.getElementById('btnExcluirConsultor').addEventListener('click', ()=>{
-      if(confirm('Excluir este consultor? Isso não apaga o histórico de KPIs/prontuário já lançado.')){
-        data.consultants = data.consultants.filter(x=>x.id!==c.id);
-        save();
-        closeModal();
-        render();
-      }
-    });
-  }
-}
-
-/* ---------------------------------------------------------
-   DETALHE DO CONSULTOR (modal com abas)
---------------------------------------------------------- */
-let detailTab = 'perfil';
-
-function openConsultantDetail(consultantId){
-  detailTab = 'perfil';
-  renderConsultantDetail(consultantId);
-}
-
-function renderConsultantDetail(consultantId){
-  const c = data.consultants.find(x=>x.id===consultantId);
-  if(!c) return;
-  openModal(consultantDetailModal(c), 'wide');
-  attachDetailHandlers(c);
-}
-
-function consultantDetailModal(c){
-  return `
-    <button class="modal-close" data-close-modal>✕</button>
-    <h2>${escapeHtml(c.nome)}</h2>
-    <div class="modal-sub">${escapeHtml(c.nivel||'Consultor')} · <span class="badge ${statusClass(c.status)}">${c.status}</span>${c.perfilComportamental?' · '+escapeHtml(c.perfilComportamental):''}${c.maturidade?' · '+escapeHtml(c.maturidade):''}</div>
-    <div class="tabs">
-      <button class="tab-btn ${detailTab==='perfil'?'active':''}" data-tab="perfil">Perfil</button>
-      <button class="tab-btn ${detailTab==='kpis'?'active':''}" data-tab="kpis">KPIs</button>
-      <button class="tab-btn ${detailTab==='prontuario'?'active':''}" data-tab="prontuario">Prontuário</button>
-      <button class="tab-btn ${detailTab==='treinamentos'?'active':''}" data-tab="treinamentos">Treinamentos</button>
-    </div>
-    <div id="detailTabContent">
-      ${renderDetailTabContent(c)}
-    </div>
-  `;
-}
-
-function renderDetailTabContent(c){
-  if(detailTab==='perfil') return tabPerfil(c);
-  if(detailTab==='kpis') return tabKpis(c);
-  if(detailTab==='prontuario') return tabProntuario(c);
-  if(detailTab==='treinamentos') return tabTreinamentos(c);
-  return '';
-}
-
-function tabPerfil(c){
-  return `
-    <div class="field-row">
-      <div class="field"><label>Perfil comportamental</label><div>${escapeHtml(c.perfilComportamental||'—')}</div></div>
-      <div class="field"><label>Nível de maturidade</label><div>${escapeHtml(c.maturidade||'—')}</div></div>
-    </div>
-    <div class="field"><label>Principal gargalo</label><div style="white-space:pre-wrap;">${escapeHtml(c.gargalo||'—')}</div></div>
-    <div style="margin-top:6px;">
-      <button class="btn secondary small" id="btnEditarPerfil">Editar dados</button>
-    </div>
-  `;
-}
-
-function tabKpis(c){
-  const mk = currentMonthKey();
-  const months = getLastMonths(6);
-  const rows = months.map(m=>{
-    const k = data.kpis[kpiKey(c.id, m)];
-    return {m, k};
-  }).filter(r=>r.k);
-  const cur = getKpi(c.id, mk);
-  return `
-    <div class="panel" style="border:none;padding:0;margin-bottom:18px;">
-      <h3 style="margin-bottom:10px;">Lançar KPI — ${monthLabel(mk)}</h3>
-      <div class="field-row">
-        <div class="field"><label>Leads / Prospecções</label><input type="number" min="0" id="k_leads" value="${cur.leads||0}"></div>
-        <div class="field"><label>Cotações realizadas</label><input type="number" min="0" id="k_propostas" value="${cur.propostas||0}"></div>
-      </div>
-      <div class="field"><label>Vendas fechadas</label><input type="number" min="0" id="k_vendas" value="${cur.vendas||0}"></div>
-      <button class="btn" id="btnSalvarKpi">Salvar KPI do mês</button>
-    </div>
-    <h3 style="font-size:14px;margin-bottom:10px;">Histórico (últimos meses)</h3>
-    ${rows.length===0 ? '<div class="empty">Sem histórico ainda.</div>' : `
-    <table>
-      <thead><tr><th>Mês</th><th>Leads</th><th>Cotações</th><th>Vendas</th><th>Conversão cotação→venda</th></tr></thead>
-      <tbody>
-        ${rows.map(r=>{
-          const conv = r.k.propostas>0 ? ((r.k.vendas/r.k.propostas)*100).toFixed(1)+'%' : '—';
-          return `<tr><td>${monthLabel(r.m)}</td><td>${r.k.leads}</td><td>${r.k.propostas}</td><td><strong>${r.k.vendas}</strong></td><td>${conv}</td></tr>`;
-        }).join('')}
-      </tbody>
-    </table>`}
-  `;
-}
-
-function getLastMonths(n){
-  const arr = [];
-  const d = new Date();
-  for(let i=0;i<n;i++){
-    const dt = new Date(d.getFullYear(), d.getMonth()-i, 1);
-    arr.push(dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0'));
-  }
-  return arr;
-}
-
-const TIPOS_PRONTUARIO = ['Feedback','Observação','PDI','Reunião 1:1'];
-
-function tabProntuario(c){
-  const entries = data.prontuario.filter(p=>p.consultantId===c.id).sort((a,b)=>b.data.localeCompare(a.data));
-  return `
-    <div class="panel" style="border:none;padding:0;margin-bottom:18px;">
-      <h3 style="margin-bottom:10px;">Novo registro</h3>
-      <div class="field-row">
-        <div class="field"><label>Tipo</label>
-          <select id="p_tipo">${TIPOS_PRONTUARIO.map(t=>`<option>${t}</option>`).join('')}</select>
         </div>
-        <div class="field"><label>Data</label><input type="date" id="p_data" value="${todayISO()}"></div>
       </div>
-      <div class="field"><label>Anotação</label><textarea id="p_texto" placeholder="Descreva o que foi observado, combinado ou orientado..."></textarea></div>
-      <button class="btn" id="btnSalvarProntuario">Adicionar ao prontuário</button>
-    </div>
-    <h3 style="font-size:14px;margin-bottom:10px;">Histórico</h3>
-    ${entries.length===0 ? '<div class="empty">Nenhum registro ainda.</div>' : entries.map(e=>`
-      <div class="timeline-item">
-        <div class="ti-head"><span class="ti-type">${e.tipo}</span><span>${fmtDate(e.data)}</span></div>
-        <div class="ti-text">${escapeHtml(e.texto)}</div>
+
+      <div style={{ maxWidth: 1180, margin: "0 auto", padding: "24px 22px 60px" }}>
+        {loading ? (
+          <div style={{ color: "#6B7076", fontSize: 14, padding: 40, textAlign: "center" }}>Carregando dados…</div>
+        ) : tab === "dashboard" ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+              <KpiCard icon={Users} label="Associados na carteira" value={associados.length} />
+              <KpiCard icon={CircleDollarSign} label="Total em adesões" value={formatBRL(totalAdesoesCarteira)} accent={RED_DARK} />
+              <KpiCard icon={Wallet} label="Financeiro acumulado" value={formatBRL(totalFinAcumulado)} />
+              <KpiCard icon={TrendingUp} label="Média mensal" value={formatBRL(mediaMensal)} accent={RED_DARK} />
+            </div>
+
+            <div style={{ background: "#fff", borderRadius: 12, border: `1px solid ${SILVER}`, padding: 20 }}>
+              <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7076", margin: "0 0 16px" }}>
+                Evolução do financeiro mensal
+              </h3>
+              {chartData.length === 0 ? (
+                <div style={{ color: "#9AA0A6", fontSize: 13, padding: "30px 0", textAlign: "center" }}>
+                  Nenhum mês lançado ainda. Adicione um registro em "Financeiro mensal".
+                </div>
+              ) : (
+                <div style={{ width: "100%", height: 260 }}>
+                  <ResponsiveContainer>
+                    <BarChart data={chartData}>
+                      <CartesianGrid stroke="#EDEDED" vertical={false} />
+                      <XAxis dataKey="mes" tick={{ fontSize: 12, fill: "#6B7076" }} axisLine={{ stroke: SILVER }} tickLine={false} />
+                      <YAxis tick={{ fontSize: 11, fill: "#6B7076" }} axisLine={false} tickLine={false}
+                        tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(v) => formatBRL(v)} contentStyle={{ borderRadius: 8, border: `1px solid ${SILVER}`, fontSize: 13 }} />
+                      <Bar dataKey="total" fill={RED} radius={[4, 4, 0, 0]} name="Soma final total" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+
+            <div style={{ background: "#fff", borderRadius: 12, border: `1px solid ${SILVER}`, padding: 20 }}>
+              <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7076", margin: "0 0 14px" }}>
+                Últimos associados cadastrados
+              </h3>
+              {associados.length === 0 ? (
+                <div style={{ color: "#9AA0A6", fontSize: 13, padding: "20px 0", textAlign: "center" }}>Nenhum associado cadastrado ainda.</div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {filteredAssociados.slice(0, 5).map((a) => (
+                    <div key={a.id} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "10px 14px", background: ICE, borderRadius: 8, fontSize: 13,
+                    }}>
+                      <span style={{ fontWeight: 700 }}>{a.nomeCompleto}</span>
+                      <span style={{ color: "#3A5A66" }}>{a.placa || "—"}</span>
+                      <span style={{ color: "#3A5A66" }}>{formatDateBR(a.dataContrato)}</span>
+                      <span style={{ fontWeight: 700 }}>{formatBRL(toNumber(a.adesao))}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : tab === "carteira" ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ position: "relative", flex: 1, minWidth: 240, maxWidth: 360 }}>
+                <Search size={15} style={{ position: "absolute", left: 12, top: 11, color: "#9AA0A6" }} />
+                <TextInput
+                  placeholder="Buscar por nome, CPF, placa ou telefone…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  style={{ paddingLeft: 34 }}
+                />
+              </div>
+              <button style={btnPrimary} onClick={() => setModalAssociado({ mode: "new" })}>
+                <Plus size={15} /> Novo associado
+              </button>
+            </div>
+
+            <div style={{ background: "#fff", borderRadius: 12, border: `1px solid ${SILVER}`, overflow: "hidden" }}>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 960 }}>
+                  <thead>
+                    <tr style={{ background: BLACK }}>
+                      {["Contrato", "Nome", "Telefone", "Placa", "Origem", "Plano", "Adesão", "1ª mensalidade", ""].map((h) => (
+                        <th key={h} style={{ textAlign: "left", padding: "10px 14px", color: "#fff", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAssociados.length === 0 ? (
+                      <tr><td colSpan={9} style={{ padding: 30, textAlign: "center", color: "#9AA0A6" }}>Nenhum associado encontrado.</td></tr>
+                    ) : filteredAssociados.map((a, i) => (
+                      <tr key={a.id} style={{ background: i % 2 ? "#FAFAFA" : "#fff", borderBottom: `1px solid #EEE` }}>
+                        <td style={cell}>{formatDateBR(a.dataContrato)}</td>
+                        <td style={{ ...cell, fontWeight: 700 }}>{a.nomeCompleto}</td>
+                        <td style={cell}>{a.telefone || "—"}</td>
+                        <td style={cell}>{a.placa || "—"}</td>
+                        <td style={cell}>{a.origem || "—"}</td>
+                        <td style={cell}>{a.planoEscolhido || "—"}</td>
+                        <td style={cell}>{formatBRL(toNumber(a.adesao))}</td>
+                        <td style={cell}>{formatBRL(toNumber(a.valorPrimeiraMensalidade))}</td>
+                        <td style={{ ...cell, whiteSpace: "nowrap" }}>
+                          <button onClick={() => setModalAssociado({ mode: "edit", data: a })} style={iconBtn}><Pencil size={14} /></button>
+                          <button onClick={() => deleteAssociado(a.id)} style={{ ...iconBtn, color: RED }}><Trash2 size={14} /></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button style={btnPrimary} onClick={() => setModalFin({ mode: "new" })}>
+                <Plus size={15} /> Lançar mês
+              </button>
+            </div>
+
+            <div style={{ background: "#fff", borderRadius: 12, border: `1px solid ${SILVER}`, overflow: "hidden" }}>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 900 }}>
+                  <thead>
+                    <tr style={{ background: BLACK }}>
+                      {["Mês", "Adesão", "Premiação mensal", "Premiação semanal", "Consultoria", "Plano de carreira", "Recorrência placas", "Indicações", "Soma final total", ""].map((h) => (
+                        <th key={h} style={{ textAlign: "left", padding: "10px 14px", color: "#fff", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedFin.length === 0 ? (
+                      <tr><td colSpan={10} style={{ padding: 30, textAlign: "center", color: "#9AA0A6" }}>Nenhum mês lançado.</td></tr>
+                    ) : sortedFin.map((f, i) => (
+                      <tr key={f.id} style={{ background: i % 2 ? "#FAFAFA" : "#fff", borderBottom: `1px solid #EEE` }}>
+                        <td style={{ ...cell, fontWeight: 700 }}>{monthLabel(f.mes)}</td>
+                        <td style={cell}>{formatBRL(toNumber(f.adesao))}</td>
+                        <td style={cell}>{formatBRL(toNumber(f.premiacaoMensal))}</td>
+                        <td style={cell}>{formatBRL(toNumber(f.premiacaoSemanal))}</td>
+                        <td style={cell}>{formatBRL(toNumber(f.consultoria))}</td>
+                        <td style={cell}>{formatBRL(toNumber(f.planoDeCarreira))}</td>
+                        <td style={cell}>{formatBRL(toNumber(f.recorrenciaPlacasAtivas))}</td>
+                        <td style={cell}>{formatBRL(toNumber(f.pagamentoIndicacoes))}</td>
+                        <td style={{ ...cell, fontWeight: 800, color: RED_DARK }}>{formatBRL(toNumber(f.somaFinalTotal))}</td>
+                        <td style={{ ...cell, whiteSpace: "nowrap" }}>
+                          <button onClick={() => setModalFin({ mode: "edit", data: f })} style={iconBtn}><Pencil size={14} /></button>
+                          <button onClick={() => deleteFin(f.id)} style={{ ...iconBtn, color: RED }}><Trash2 size={14} /></button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-    `).join('')}
-  `;
-}
 
-function tabTreinamentos(c){
-  const catalog = data.trainingCatalog;
-  const progress = data.trainingProgress[c.id] || {};
-  if(catalog.length===0){
-    return `<div class="empty">Nenhum treinamento cadastrado ainda. Vá em "Treinamentos" no menu lateral para criar o catálogo do time.</div>`;
-  }
-  const done = catalog.filter(t=>progress[t.id] && progress[t.id].completed).length;
-  return `
-    <div style="margin-bottom:12px;font-size:13.5px;color:var(--muted);">Progresso: <strong style="color:var(--ink);">${done}/${catalog.length}</strong> concluídos</div>
-    ${catalog.map(t=>{
-      const p = progress[t.id] || {};
-      return `
-      <div class="checklist-item">
-        <input type="checkbox" data-training-id="${t.id}" ${p.completed?'checked':''}>
-        <span>${escapeHtml(t.titulo)}</span>
-        <span class="cat">${escapeHtml(t.categoria||'Geral')}</span>
-      </div>`;
-    }).join('')}
-  `;
-}
-
-function attachDetailHandlers(c){
-  document.querySelectorAll('[data-tab]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{ detailTab = btn.dataset.tab; renderConsultantDetail(c.id); });
-  });
-
-  if(detailTab==='perfil'){
-    const editBtn = document.getElementById('btnEditarPerfil');
-    if(editBtn) editBtn.addEventListener('click', ()=>{ closeModal(); openConsultorForm(c.id); });
-  }
-
-  if(detailTab==='kpis'){
-    document.getElementById('btnSalvarKpi').addEventListener('click', ()=>{
-      const mk = currentMonthKey();
-      const prev = data.kpis[kpiKey(c.id, mk)] || {};
-      data.kpis[kpiKey(c.id, mk)] = {
-        leads: Number(document.getElementById('k_leads').value)||0,
-        propostas: Number(document.getElementById('k_propostas').value)||0,
-        vendas: Number(document.getElementById('k_vendas').value)||0,
-        contatos: prev.contatos||0,
-        ticketMedio: prev.ticketMedio||0
-      };
-      save();
-      renderConsultantDetail(c.id);
-    });
-  }
-
-  if(detailTab==='prontuario'){
-    document.getElementById('btnSalvarProntuario').addEventListener('click', ()=>{
-      const texto = document.getElementById('p_texto').value.trim();
-      if(!texto){ alert('Escreva a anotação.'); return; }
-      data.prontuario.push({
-        id: uid(),
-        consultantId: c.id,
-        data: document.getElementById('p_data').value || todayISO(),
-        tipo: document.getElementById('p_tipo').value,
-        texto
-      });
-      save();
-      renderConsultantDetail(c.id);
-    });
-  }
-
-  if(detailTab==='treinamentos'){
-    document.querySelectorAll('[data-training-id]').forEach(chk=>{
-      chk.addEventListener('change', ()=>{
-        const tid = chk.dataset.trainingId;
-        if(!data.trainingProgress[c.id]) data.trainingProgress[c.id] = {};
-        data.trainingProgress[c.id][tid] = {completed: chk.checked, data: todayISO()};
-        save();
-      });
-    });
-  }
-}
-
-/* ---------------------------------------------------------
-   TREINAMENTOS (catálogo)
---------------------------------------------------------- */
-function viewTreinamentos(){
-  const catalog = data.trainingCatalog;
-  const ativos = data.consultants.filter(c=>c.status==='Ativo');
-  return `
-    <h1 class="page-title">Treinamentos</h1>
-    <p class="page-sub">Catálogo de treinamentos e progresso do time</p>
-
-    <div class="panel">
-      <h3>Adicionar treinamento</h3>
-      <div class="field-row">
-        <div class="field"><label>Título</label><input type="text" id="t_titulo" placeholder="Ex: Onboarding — Módulo 1"></div>
-        <div class="field"><label>Categoria</label><input type="text" id="t_categoria" placeholder="Ex: Integração, Vendas, PDI"></div>
-      </div>
-      <button class="btn" id="btnAddTreinamento">+ Adicionar ao catálogo</button>
+      {modalAssociado && (
+        <Modal title={modalAssociado.mode === "edit" ? "Editar associado" : "Novo associado"} onClose={() => setModalAssociado(null)} wide>
+          <AssociadoForm initial={modalAssociado.data} onSave={saveAssociado} onCancel={() => setModalAssociado(null)} />
+        </Modal>
+      )}
+      {modalFin && (
+        <Modal title={modalFin.mode === "edit" ? "Editar mês" : "Lançar mês"} onClose={() => setModalFin(null)}>
+          <FinanceiroForm initial={modalFin.data} onSave={saveFin} onCancel={() => setModalFin(null)} />
+        </Modal>
+      )}
     </div>
-
-    <div class="panel">
-      <h3>Catálogo (${catalog.length})</h3>
-      ${catalog.length===0 ? '<div class="empty">Nenhum treinamento cadastrado ainda.</div>' : `
-      <table>
-        <thead><tr><th>Título</th><th>Categoria</th><th>Concluído por</th><th></th></tr></thead>
-        <tbody>
-          ${catalog.map(t=>{
-            const doneCount = ativos.filter(c=>{
-              const p = data.trainingProgress[c.id];
-              return p && p[t.id] && p[t.id].completed;
-            }).length;
-            return `<tr>
-              <td>${escapeHtml(t.titulo)}</td>
-              <td>${escapeHtml(t.categoria||'Geral')}</td>
-              <td>${doneCount}/${ativos.length}</td>
-              <td style="text-align:right;"><button class="btn small danger" data-del-training="${t.id}">Excluir</button></td>
-            </tr>`;
-          }).join('')}
-        </tbody>
-      </table>`}
-    </div>
-  `;
+  );
 }
 
-/* ---------------------------------------------------------
-   AGENDA
---------------------------------------------------------- */
-function viewAgenda(){
-  const items = data.agenda.slice().sort((a,b)=>a.data.localeCompare(b.data));
-  return `
-    <h1 class="page-title">Agenda</h1>
-    <p class="page-sub">Reuniões e compromissos com o time</p>
-
-    <div class="toolbar">
-      <div></div>
-      <button class="btn" id="btnNovaAgenda">+ Novo compromisso</button>
-    </div>
-
-    <div class="panel">
-      ${items.length===0 ? '<div class="empty">Nenhum compromisso cadastrado.</div>' : `
-      <table>
-        <thead><tr><th>Data</th><th>Horário</th><th>Consultor</th><th>Assunto</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-          ${items.map(a=>`
-            <tr>
-              <td>${fmtDate(a.data)}</td>
-              <td>${a.horario||'—'}</td>
-              <td>${a.consultantId ? escapeHtml(consultantName(a.consultantId)) : 'Time todo'}</td>
-              <td>${escapeHtml(a.assunto)}</td>
-              <td><span class="badge ${a.status==='Concluída'?'concluida':'pendente'}">${a.status}</span></td>
-              <td style="text-align:right;display:flex;gap:6px;justify-content:flex-end;">
-                <button class="btn small secondary" data-toggle-agenda="${a.id}">${a.status==='Concluída'?'Reabrir':'Concluir'}</button>
-                <button class="btn small danger" data-del-agenda="${a.id}">Excluir</button>
-              </td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>`}
-    </div>
-  `;
-}
-
-function formAgendaModal(){
-  const opts = data.consultants.map(c=>`<option value="${c.id}">${escapeHtml(c.nome)}</option>`).join('');
-  return `
-    <button class="modal-close" data-close-modal>✕</button>
-    <h2>Novo compromisso</h2>
-    <div class="modal-sub">Agende uma reunião ou compromisso.</div>
-    <div class="field-row">
-      <div class="field"><label>Data</label><input type="date" id="a_data" value="${todayISO()}"></div>
-      <div class="field"><label>Horário</label><input type="text" id="a_horario" placeholder="Ex: 14:30"></div>
-    </div>
-    <div class="field"><label>Consultor (opcional)</label>
-      <select id="a_consultor"><option value="">Time todo / geral</option>${opts}</select>
-    </div>
-    <div class="field"><label>Assunto</label><input type="text" id="a_assunto" placeholder="Ex: Feedback mensal, treinamento, 1:1..."></div>
-    <div class="field"><label>Notas</label><textarea id="a_notas" placeholder="Detalhes adicionais (opcional)"></textarea></div>
-    <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end;">
-      <button class="btn secondary" data-close-modal>Cancelar</button>
-      <button class="btn" id="btnSalvarAgenda">Salvar</button>
-    </div>
-  `;
-}
-
-/* ---------------------------------------------------------
-   MODAL GENÉRICO
---------------------------------------------------------- */
-function openModal(html, size){
-  const overlay = document.getElementById('modalOverlay');
-  const box = document.getElementById('modalBox');
-  box.className = 'modal' + (size==='wide' ? ' wide' : '');
-  box.innerHTML = html;
-  overlay.classList.add('open');
-  overlay.querySelectorAll('[data-close-modal]').forEach(el=>el.addEventListener('click', closeModal));
-}
-function closeModal(){
-  document.getElementById('modalOverlay').classList.remove('open');
-}
-document.getElementById('modalOverlay').addEventListener('click', (e)=>{
-  if(e.target.id==='modalOverlay') closeModal();
-});
-
-/* ---------------------------------------------------------
-   HANDLERS DE VIEW (delegação por view renderizada)
---------------------------------------------------------- */
-function attachViewHandlers(){
-  document.querySelectorAll('[data-open-consultant]').forEach(el=>{
-    el.addEventListener('click', ()=> openConsultantDetail(el.dataset.openConsultant));
-  });
-
-  const btnEditarMeta = document.getElementById('btnEditarMeta');
-  if(btnEditarMeta) btnEditarMeta.addEventListener('click', ()=>{
-    openModal(formMetaModal(), 'default');
-    document.getElementById('btnSalvarMeta').addEventListener('click', ()=>{
-      const mk = currentMonthKey();
-      data.metas[mk] = Number(document.getElementById('m_meta').value)||0;
-      save();
-      closeModal();
-      render();
-    });
-  });
-
-  const btnNovoConsultor = document.getElementById('btnNovoConsultor');
-  if(btnNovoConsultor) btnNovoConsultor.addEventListener('click', ()=> openConsultorForm(null));
-
-  const btnAddTreinamento = document.getElementById('btnAddTreinamento');
-  if(btnAddTreinamento) btnAddTreinamento.addEventListener('click', ()=>{
-    const titulo = document.getElementById('t_titulo').value.trim();
-    if(!titulo){ alert('Informe o título do treinamento.'); return; }
-    const categoria = document.getElementById('t_categoria').value.trim();
-    data.trainingCatalog.push({id: uid(), titulo, categoria});
-    save();
-    render();
-  });
-
-  document.querySelectorAll('[data-del-training]').forEach(el=>{
-    el.addEventListener('click', ()=>{
-      if(confirm('Excluir este treinamento do catálogo?')){
-        data.trainingCatalog = data.trainingCatalog.filter(t=>t.id!==el.dataset.delTraining);
-        save();
-        render();
-      }
-    });
-  });
-
-  const btnNovaAgenda = document.getElementById('btnNovaAgenda');
-  if(btnNovaAgenda) btnNovaAgenda.addEventListener('click', ()=>{
-    openModal(formAgendaModal(), 'default');
-    document.getElementById('btnSalvarAgenda').addEventListener('click', ()=>{
-      const assunto = document.getElementById('a_assunto').value.trim();
-      if(!assunto){ alert('Informe o assunto.'); return; }
-      data.agenda.push({
-        id: uid(),
-        data: document.getElementById('a_data').value || todayISO(),
-        horario: document.getElementById('a_horario').value.trim(),
-        consultantId: document.getElementById('a_consultor').value || null,
-        assunto,
-        notas: document.getElementById('a_notas').value.trim(),
-        status: 'Pendente'
-      });
-      save();
-      closeModal();
-      render();
-    });
-  });
-
-  document.querySelectorAll('[data-toggle-agenda]').forEach(el=>{
-    el.addEventListener('click', ()=>{
-      const a = data.agenda.find(x=>x.id===el.dataset.toggleAgenda);
-      if(a){ a.status = a.status==='Concluída' ? 'Pendente' : 'Concluída'; save(); render(); }
-    });
-  });
-  document.querySelectorAll('[data-del-agenda]').forEach(el=>{
-    el.addEventListener('click', ()=>{
-      if(confirm('Excluir este compromisso?')){
-        data.agenda = data.agenda.filter(x=>x.id!==el.dataset.delAgenda);
-        save();
-        render();
-      }
-    });
-  });
-}
-
-/* ---------------------------------------------------------
-   INIT
---------------------------------------------------------- */
-loadData();
-</script>
-</body>
-</html>
+const cell = { padding: "10px 14px", color: BLACK };
+const iconBtn = {
+  background: "none", border: "none", cursor: "pointer", color: "#6B7076",
+  padding: 5, marginRight: 2,
+};
