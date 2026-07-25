@@ -1,0 +1,2435 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CRM Financeiro Ancore</title>
+<meta name="description" content="CRM + ERP Financeiro do Consultor Ancore" />
+
+<!-- Import map: resolve os pacotes usados pelo app (React, Recharts, lucide-react, SheetJS)
+     via ESM diretamente do CDN esm.sh, sem precisar de um passo de build/bundle. -->
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.3.1",
+    "react/": "https://esm.sh/react@18.3.1/",
+    "react-dom": "https://esm.sh/react-dom@18.3.1",
+    "react-dom/": "https://esm.sh/react-dom@18.3.1/",
+    "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom",
+    "lucide-react": "https://esm.sh/lucide-react@0.383.0?external=react,react-dom",
+    "xlsx": "https://esm.sh/xlsx@0.18.5"
+  }
+}
+</script>
+
+<!-- Babel Standalone: transpila o JSX diretamente no navegador (sem build step),
+     necessário porque o GitHub Pages só serve arquivos estáticos. -->
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+
+<style>
+  html, body { margin: 0; padding: 0; background: #0A0A0C; min-height: 100vh; }
+  #root { min-height: 100vh; }
+  #loading-fallback {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #9AA1A9; font-family: system-ui, -apple-system, sans-serif; font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Shim de window.storage: substitui o armazenamento nativo do Claude.ai por
+     localStorage, para que o app funcione normalmente rodando fora dele (ex: GitHub Pages). -->
+<script>
+// Shim de window.storage para rodar fora do Claude.ai (ex: GitHub Pages).
+// Reproduz a mesma API (get/set/delete/list) usada pelo app, mas persistindo
+// os dados no localStorage do navegador do usuário. Como este site roda sem
+// backend, não existe conceito de "shared" entre usuários — cada navegador
+// tem seus próprios dados, isolados.
+(function () {
+  var PREFIX = "ancore-storage:";
+
+  function fullKey(key) {
+    return PREFIX + key;
+  }
+
+  window.storage = {
+    get: function (key) {
+      return new Promise(function (resolve, reject) {
+        try {
+          var raw = window.localStorage.getItem(fullKey(key));
+          if (raw === null) {
+            reject(new Error("Key not found: " + key));
+            return;
+          }
+          resolve({ key: key, value: raw, shared: false });
+        } catch (err) {
+          reject(err);
+        }
+      });
+    },
+    set: function (key, value) {
+      return new Promise(function (resolve, reject) {
+        try {
+          window.localStorage.setItem(fullKey(key), value);
+          resolve({ key: key, value: value, shared: false });
+        } catch (err) {
+          reject(err);
+        }
+      });
+    },
+    delete: function (key) {
+      return new Promise(function (resolve) {
+        window.localStorage.removeItem(fullKey(key));
+        resolve({ key: key, deleted: true, shared: false });
+      });
+    },
+    list: function (prefix) {
+      return new Promise(function (resolve) {
+        var keys = [];
+        for (var i = 0; i < window.localStorage.length; i++) {
+          var k = window.localStorage.key(i);
+          if (k && k.indexOf(PREFIX) === 0) {
+            var short = k.slice(PREFIX.length);
+            if (!prefix || short.indexOf(prefix) === 0) keys.push(short);
+          }
+        }
+        resolve({ keys: keys, prefix: prefix, shared: false });
+      });
+    },
+  };
+})();
+
+</script>
+
+<div id="root"><div id="loading-fallback">Carregando CRM Financeiro Ancore…</div></div>
+
+<script type="text/babel" data-presets="react" data-type="module">
+import { useState, useEffect, useMemo, useCallback } from "react";
+import ReactDOM from "react-dom/client";
+import {
+  Users, Wallet, TrendingUp, TrendingDown, Plus, Pencil, Trash2, X, Search,
+  LayoutDashboard, Target, Repeat, Gift, Share2, ClipboardList, Settings,
+  ChevronLeft, ChevronRight, ShoppingCart, Save, CircleDollarSign, CarFront,
+  AlertTriangle, CheckCircle2, Download, Printer, ArrowLeft, MessageCircle,
+  Clock, FileText, Award, UserCog, Lock, Filter,
+} from "lucide-react";
+import {
+  BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  CartesianGrid, PieChart, Pie, Cell, Legend,
+} from "recharts";
+import * as XLSX from "xlsx";
+
+/* =================================================================
+   ANCORE CRM + ERP FINANCEIRO
+   Paleta: vermelho #DB3937 · preto #17181A · prata #C8CCD1 · gelo #E7F2F6
+================================================================= */
+
+const RED = "#DB3937";
+const RED_DARK = "#FF6B65";
+const GREEN = "#3DDC84";
+const AMBER = "#F0B429";
+const BLACK = "#0D0E10";
+const SILVER = "#2E3036";
+const ICE = "#12202B";
+const ICE_LINE = "#1E3648";
+const MUTED = "#9AA1A9";
+const PIE_COLORS = [RED, "#5B8DEF", AMBER, GREEN, "#A78BFA", "#F472B6"];
+const PAGE_BG = "#0A0A0F";
+const SURFACE = "#1A1A24";
+const SURFACE_ALT = "#22222E";
+const TEXT = "#EDEEF0";
+const BORDER_SOFT = "#2B2C38";
+const CARD_SHADOW = "0 4px 24px rgba(0,0,0,0.35)";
+const CARD_RADIUS = 14;
+
+const K = {
+  associados: "ancore:crm:associados",
+  vendas: "ancore:crm:vendas",
+  financeiro: "ancore:crm:despesas",
+  metas: "ancore:crm:metas",
+  indicacoes: "ancore:crm:indicacoes",
+  config: "ancore:crm:config",
+  equipe: "ancore:crm:equipe",
+  producaoEquipe: "ancore:crm:producao-equipe",
+};
+
+const ORIGEM_OPTS = ["Indicação", "Instagram", "Google", "WhatsApp", "Prospecção", "Cliente antigo", "Outros"];
+const PAGAMENTO_OPTS = ["Boleto", "Pix", "Cartão de crédito", "Débito automático"];
+const PLANO_OPTS = ["Bronze", "Prata", "Ouro"];
+const VENDA_STATUS_OPTS = ["Ativa", "Ativa Pendente", "Inadimplente", "Cancelada"];
+const INDIC_STATUS_OPTS = ["Pendente", "Pago"];
+const CONSULTORIA_VALORES = [10, 20, 30, 40, 50];
+
+const CARGO_OPTS = ["Consultor", "Líder", "Gestor"];
+const STATUS_EQUIPE_OPTS = ["Ativo", "Inativo"];
+
+// Regras oficiais fornecidas pela Ancore (fixas, não editáveis pelo usuário).
+const PLANO_FAIXAS = [
+  { nivel: "Consultor", min: 0, premiacao: 0 },
+  { nivel: "Líder", min: 30, premiacao: 1000 },
+  { nivel: "Gestor Executivo", min: 50, premiacao: 2500 },
+  { nivel: "Gestor Executivo 2", min: 75, premiacao: 3000 },
+  { nivel: "Gestor Executivo 3", min: 100, premiacao: 3500 },
+];
+const PREMIACAO_MENSAL_FAIXAS = [{ min: 5, valor: 300 }, { min: 10, valor: 600 }, { min: 15, valor: 900 }, { min: 20, valor: 1300 }];
+const PREMIACAO_SEMANAL_BLOCO = 5;
+const PREMIACAO_SEMANAL_VALOR = 150;
+const RECORRENCIA_BLOCO = 100;
+const RECORRENCIA_VALOR_POR_BLOCO = 500;
+const RECORRENCIA_VENDAS_MINIMAS_MES = 10;
+const CONSULTORIA_PLACAS_ATIVAS_MINIMAS = 10;
+const EQUIPE_MIN_ELEGIVEIS = 2;
+// Calendário financeiro fixo (regras Ancore): dia limite de envio de NF e dia de pagamento.
+const CALENDARIO = {
+  consultoria: { nf: 13, pagamento: 15, label: "Consultoria Especializada" },
+  recorrencia: { nf: 18, pagamento: 20, label: "Recorrência" },
+  planoDeCarreira: { nf: 22, pagamento: 25, label: "Plano de Carreira" },
+  premiacoes: { nf: 22, pagamento: 25, label: "Premiações Mensais e Semanais" },
+};
+function dataDoMes(mes, dia) { return `${mes}-${String(dia).padStart(2, "0")}`; }
+const EQUIPE_VENDAS_MIN_POR_PESSOA = 3;
+
+const DEFAULT_CONFIG = {
+  meuCargo: "Consultor", // define o mínimo de vendas pessoais exigido para elegibilidade de consultoria (Gestor=3, demais=5)
+};
+
+/* ---------------------------------------------------------------
+   Helpers
+--------------------------------------------------------------- */
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+function toNumber(v) {
+  if (v === "" || v === null || v === undefined) return 0;
+  const n = typeof v === "number" ? v : parseFloat(v);
+  return isNaN(n) ? 0 : n;
+}
+function formatBRL(n) { return (n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); }
+function formatDateBR(iso) {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-");
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+}
+function monthLabel(ym) {
+  if (!ym) return "—";
+  const [y, m] = ym.split("-");
+  const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+  const idx = parseInt(m, 10) - 1;
+  return `${meses[idx] ?? m}/${(y || "").slice(2)}`;
+}
+function pctChange(atual, anterior) {
+  if (!anterior) return null;
+  return ((atual - anterior) / anterior) * 100;
+}
+function trendText(valorAtual, valorAnterior, contexto) {
+  const pct = pctChange(valorAtual, valorAnterior);
+  if (pct === null) return "Ainda não há mês anterior suficiente para comparar.";
+  if (Math.abs(pct) < 3) return `${contexto || "O indicador"} apresentou estabilidade em relação ao mês anterior.`;
+  const dir = pct >= 0 ? "Crescimento" : "Queda";
+  return `${dir} de ${Math.abs(pct).toFixed(0)}% em relação ao mês anterior.`;
+}
+function currentMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function prevMonth(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function nextMonth(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function mondayOf(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + diff);
+  return monday.toISOString().slice(0, 10);
+}
+function monthsBetween(iso) {
+  if (!iso) return 0;
+  const start = new Date(iso);
+  const now = new Date();
+  return Math.max(0, (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth()));
+}
+function daysUntilBirthday(iso) {
+  if (!iso) return 9999;
+  const [, m, d] = iso.split("-").map(Number);
+  const now = new Date();
+  let next = new Date(now.getFullYear(), m - 1, d);
+  if (next < new Date(now.getFullYear(), now.getMonth(), now.getDate())) {
+    next = new Date(now.getFullYear() + 1, m - 1, d);
+  }
+  return Math.round((next - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+}
+function ageFromDate(iso) {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-").map(Number);
+  const now = new Date();
+  let age = now.getFullYear() - y;
+  if (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d)) age--;
+  return age;
+}
+function onlyDigits(s) { return (s || "").replace(/\D/g, ""); }
+function waLink(phone) { return `https://wa.me/55${onlyDigits(phone)}`; }
+function nomeDoIndicado(i, associadoNome) {
+  if (i.indicadoId) return associadoNome(i.indicadoId);
+  if (i.indicadoNomeManual) return `${i.indicadoNomeManual} (não cadastrado)`;
+  return "—";
+}
+function addDays(iso, n) {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+// Regra Ancore: define a data do 1º boleto a partir da data da venda (vencimentos fixos: dia 10 ou 25).
+function calcPrimeiroBoleto(dataVendaISO) {
+  if (!dataVendaISO) return "";
+  const d = new Date(dataVendaISO + "T00:00:00");
+  const dia = d.getDate();
+  let mes = d.getMonth();
+  let ano = d.getFullYear();
+  let diaAlvo;
+  if (dia <= 9) { diaAlvo = 10; mes += 1; }
+  else if (dia <= 24) { diaAlvo = 25; mes += 1; }
+  else { diaAlvo = 10; mes += 2; }
+  const alvo = new Date(ano, mes, diaAlvo);
+  return alvo.toISOString().slice(0, 10);
+}
+
+// Data do 1º boleto: usa a data editada manualmente (exceção), senão calcula pela regra Ancore.
+function getPrimeiroBoleto(venda) {
+  return venda?.primeiroBoletoManual || calcPrimeiroBoleto(venda?.data);
+}
+
+function exportXLSX(rows, filename, sheetName) {
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, sheetName || "Dados");
+  XLSX.writeFile(wb, filename);
+}
+
+/* ---------------------------------------------------------------
+   Storage hook — uma coleção por chave
+--------------------------------------------------------------- */
+function useCollection(key) {
+  const [items, setItemsState] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await window.storage.get(key);
+        if (r && r.value) setItemsState(JSON.parse(r.value));
+      } catch (e) { /* ainda não existe */ }
+      setLoading(false);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  const persist = useCallback(async (list) => {
+    setItemsState(list);
+    try { await window.storage.set(key, JSON.stringify(list)); }
+    catch (e) { console.error("Erro ao salvar", key, e); }
+  }, [key]);
+
+  const save = useCallback((item) => {
+    if (item.id) persist(items.map((i) => (i.id === item.id ? item : i)));
+    else persist([{ ...item, id: uid() }, ...items]);
+  }, [items, persist]);
+
+  const remove = useCallback((id) => persist(items.filter((i) => i.id !== id)), [items, persist]);
+
+  return { items, setItems: persist, save, remove, loading };
+}
+
+function useConfig() {
+  const [config, setConfigState] = useState(DEFAULT_CONFIG);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await window.storage.get(K.config);
+        if (r && r.value) setConfigState({ ...DEFAULT_CONFIG, ...JSON.parse(r.value) });
+      } catch (e) { /* usa default */ }
+      setLoading(false);
+    })();
+  }, []);
+  const setConfig = useCallback(async (next) => {
+    setConfigState(next);
+    try { await window.storage.set(K.config, JSON.stringify(next)); }
+    catch (e) { console.error("Erro ao salvar config", e); }
+  }, []);
+  return { config, setConfig, loading };
+}
+
+/* ---------------------------------------------------------------
+   Regras específicas Ancore
+--------------------------------------------------------------- */
+// Métricas calculadas a partir de VENDAS (cada venda = 1 placa). Associado é só o cadastro da pessoa.
+// Métricas estruturais simples (não dependem de regras de premiação/mês).
+function usePortfolioMetrics(vendas) {
+  return useMemo(() => {
+    const ativas = vendas.filter((v) => v.status === "Ativa");
+    const placasAtivasSet = new Set(ativas.map((v) => (v.veiculoPlaca || "").toUpperCase()).filter(Boolean));
+    const placasAtivas = placasAtivasSet.size;
+    const consultoriasAtivas = ativas.filter((v) => toNumber(v.consultoria) > 0).length;
+    const consultoriasVendidas = vendas.filter((v) => toNumber(v.consultoria) > 0).length;
+    const totalPlacasVendidas = vendas.length;
+    const vendasComAdesao = vendas.filter((v) => toNumber(v.valorAdesao) > 0);
+    const ticketMedioGeral = vendasComAdesao.length ? vendasComAdesao.reduce((s, v) => s + toNumber(v.valorAdesao), 0) / vendasComAdesao.length : 0;
+    const ativaPendentes = vendas.filter((v) => v.status === "Ativa Pendente").length;
+    const inadimplentes = vendas.filter((v) => v.status === "Inadimplente").length;
+    const cancelados = vendas.filter((v) => v.status === "Cancelada").length;
+    return { ativas, placasAtivas, consultoriasAtivas, consultoriasVendidas, totalPlacasVendidas, ticketMedioGeral, ativaPendentes, inadimplentes, cancelados };
+  }, [vendas]);
+}
+
+function vendasDoMes(vendas, mes) { return vendas.filter((v) => (v.data || "").startsWith(mes)); }
+// Uma venda "já está faturando" em um mês de referência se o 1º boleto (calculado pela regra Ancore) já venceu até o fim daquele mês.
+function jaFaturandoEm(venda, mesRef) {
+  const primeiroBoleto = getPrimeiroBoleto(venda);
+  if (!primeiroBoleto) return false;
+  return primeiroBoleto <= `${mesRef}-31`;
+}
+
+function computePremiacaoMensal(qtdPlacas) {
+  let valor = 0;
+  for (const f of PREMIACAO_MENSAL_FAIXAS) if (qtdPlacas >= f.min) valor = f.valor;
+  return valor;
+}
+
+function computePremiacaoSemanalDoMes(vendas, mes) {
+  const byWeek = {};
+  vendas.forEach((v) => {
+    if (!v.data) return;
+    const monday = mondayOf(v.data);
+    if (!monday.startsWith(mes)) return; // a semana pertence ao mês da sua segunda-feira
+    byWeek[monday] = (byWeek[monday] || 0) + 1;
+  });
+  const weeks = Object.entries(byWeek).sort(([a], [b]) => a.localeCompare(b)).map(([monday, count]) => ({
+    monday, count, valor: Math.floor(count / PREMIACAO_SEMANAL_BLOCO) * PREMIACAO_SEMANAL_VALOR,
+  }));
+  return { total: weeks.reduce((s, w) => s + w.valor, 0), weeks };
+}
+
+// Calcula o nível/premiação do Plano de Carreira para um mês de referência qualquer (produção pessoal + equipe daquele mês).
+function computePlanoCarreiraDoMes(vendas, producaoEquipe, consultores, mes) {
+  const producaoPessoal = vendasDoMes(vendas, mes).length;
+  const producaoEquipeDoMes = producaoEquipe.filter((p) => p.competencia === mes);
+  const producaoEquipeTotal = producaoEquipeDoMes.reduce((s, p) => s + toNumber(p.placasVendidas), 0);
+  const producaoTotal = producaoPessoal + producaoEquipeTotal;
+  // Elegibilidade da equipe: baseada exclusivamente nos consultores selecionados manualmente (máx. 2) na aba Equipe.
+  const selecionados = (consultores || []).filter((c) => c.selecionadoPlanoCarreira);
+  const elegiveisEquipe = selecionados.filter((c) => {
+    const p = producaoEquipeDoMes.find((x) => x.consultorId === c.id);
+    return p && toNumber(p.placasVendidas) >= EQUIPE_VENDAS_MIN_POR_PESSOA;
+  }).length;
+  const requisitoEquipeOk = selecionados.length >= EQUIPE_MIN_ELEGIVEIS && elegiveisEquipe >= EQUIPE_MIN_ELEGIVEIS;
+  const faixa = [...PLANO_FAIXAS].reverse().find((f) => producaoTotal >= f.min) || PLANO_FAIXAS[0];
+  const premiacaoLiberada = faixa.premiacao > 0 && requisitoEquipeOk ? faixa.premiacao : 0;
+  return { mes, producaoPessoal, producaoEquipeTotal, producaoTotal, elegiveisEquipe, requisitoEquipeOk, faixa, premiacaoLiberada };
+}
+
+// Motor financeiro automático: nada aqui é digitado manualmente, tudo vem de Vendas + Equipe + Indicações.
+function computeFinanceiroMes(vendas, producaoEquipe, indicacoes, config, mes, consultores) {
+  const mesAnterior = prevMonth(mes);
+  const vMes = vendasDoMes(vendas, mes);
+  const adesoesMes = vMes.reduce((s, v) => s + toNumber(v.valorAdesao), 0);
+  const totalAdesoesQtd = vMes.length;
+  const ticketMedio = totalAdesoesQtd ? adesoesMes / totalAdesoesQtd : 0;
+
+  const vendasMesAnterior = vendasDoMes(vendas, mesAnterior);
+  const placasVendidasMesAnterior = vendasMesAnterior.length;
+
+  const premiacaoMensal = computePremiacaoMensal(placasVendidasMesAnterior);
+  const semanal = computePremiacaoSemanalDoMes(vendas, mesAnterior);
+  const premiacaoSemanal = semanal.total;
+
+  const consultoriasAtivasTotal = vendas.filter((v) => v.status === "Ativa" && toNumber(v.consultoria) > 0 && jaFaturandoEm(v, mesAnterior)).length;
+  const minVendasConsultoria = config.meuCargo === "Gestor" ? 3 : 5;
+  const consultoriaElegivel = consultoriasAtivasTotal >= CONSULTORIA_PLACAS_ATIVAS_MINIMAS && placasVendidasMesAnterior >= minVendasConsultoria;
+  // Usa exclusivamente os boletos (consultorias) já vencidos/pagos até o mês anterior, conforme a regra de vencimento da Ancore.
+  const consultoriaPrevista = consultoriaElegivel
+    ? vendas.filter((v) => v.status === "Ativa" && toNumber(v.consultoria) > 0 && jaFaturandoEm(v, mesAnterior)).reduce((s, v) => s + toNumber(v.consultoria), 0)
+    : 0;
+
+  const placasAtivasMesAnterior = vendas.filter((v) => v.status === "Ativa" && jaFaturandoEm(v, mesAnterior)).length;
+  const recorrenciaElegivel = placasVendidasMesAnterior >= RECORRENCIA_VENDAS_MINIMAS_MES;
+  const recorrenciaBlocos = Math.floor(placasAtivasMesAnterior / RECORRENCIA_BLOCO);
+  const recorrenciaPrevista = recorrenciaElegivel ? recorrenciaBlocos * RECORRENCIA_VALOR_POR_BLOCO : 0;
+
+  const producaoEquipeMesAnterior = producaoEquipe.filter((p) => p.competencia === mesAnterior);
+  const producaoEquipeTotal = producaoEquipeMesAnterior.reduce((s, p) => s + toNumber(p.placasVendidas), 0);
+  const producaoPessoal = placasVendidasMesAnterior;
+  const producaoTotal = producaoPessoal + producaoEquipeTotal;
+  const selecionadosPlanoCarreira = (consultores || []).filter((c) => c.selecionadoPlanoCarreira);
+  const elegiveisEquipe = selecionadosPlanoCarreira.filter((c) => {
+    const p = producaoEquipeMesAnterior.find((x) => x.consultorId === c.id);
+    return p && toNumber(p.placasVendidas) >= EQUIPE_VENDAS_MIN_POR_PESSOA;
+  }).length;
+  const requisitoEquipeOk = selecionadosPlanoCarreira.length >= EQUIPE_MIN_ELEGIVEIS && elegiveisEquipe >= EQUIPE_MIN_ELEGIVEIS;
+  const faixa = [...PLANO_FAIXAS].reverse().find((f) => producaoTotal >= f.min) || PLANO_FAIXAS[0];
+  const planoDeCarreiraPrevisto = faixa.premiacao > 0 && requisitoEquipeOk ? faixa.premiacao : 0;
+
+  const indicacoesPagas = indicacoes.filter((i) => i.status === "Pago" && (i.data || "").startsWith(mes)).reduce((s, i) => s + toNumber(i.valorComissao), 0);
+
+  const totalPrevisto = adesoesMes + premiacaoMensal + premiacaoSemanal + consultoriaPrevista + planoDeCarreiraPrevisto + recorrenciaPrevista - indicacoesPagas;
+
+  return {
+    mes, mesAnterior, adesoesMes, totalAdesoesQtd, ticketMedio,
+    premiacaoMensal, placasVendidasMesAnterior,
+    premiacaoSemanal, semanalDetalhe: semanal.weeks,
+    consultoriaPrevista, consultoriaElegivel, consultoriasAtivasTotal, minVendasConsultoria,
+    recorrenciaPrevista, recorrenciaElegivel, placasAtivasMesAnterior, recorrenciaBlocos,
+    producaoPessoal, producaoEquipeTotal, producaoTotal, elegiveisEquipe, requisitoEquipeOk, faixa,
+    planoDeCarreiraPrevisto, indicacoesPagas, totalPrevisto,
+  };
+}
+
+/* ---------------------------------------------------------------
+   Componentes de UI genéricos
+--------------------------------------------------------------- */
+const inputStyle = {
+  border: `1px solid ${SILVER}`, borderRadius: 8, padding: "9px 11px", fontSize: 14,
+  color: TEXT, background: SURFACE, outline: "none", fontFamily: "inherit", width: "100%", boxSizing: "border-box",
+};
+const btnPrimary = {
+  background: RED, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px",
+  fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+};
+const btnGhost = {
+  background: SURFACE, color: TEXT, border: `1px solid ${SILVER}`, borderRadius: 8,
+  padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+};
+const iconBtn = { background: "none", border: "none", cursor: "pointer", color: MUTED, padding: 5, marginRight: 2 };
+const cellStyle = { padding: "10px 14px", color: TEXT };
+const thStyle = {
+  textAlign: "left", padding: "10px 14px", color: "#fff", fontSize: 11, fontWeight: 700,
+  textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap",
+};
+
+function Field({ label, children, span }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 6, gridColumn: span ? `span ${span}` : undefined }}>
+      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: MUTED }}>{label}</span>
+      {children}
+    </label>
+  );
+}
+function TextInput(props) { return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />; }
+function Select({ options, ...props }) {
+  return (
+    <select {...props} style={{ ...inputStyle, ...(props.style || {}) }}>
+      <option value="">Selecionar…</option>
+      {options.map((o) => <option key={o} value={o}>{o}</option>)}
+    </select>
+  );
+}
+function TextArea(props) {
+  return <textarea {...props} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit", ...(props.style || {}) }} />;
+}
+
+function Badge({ text, tone }) {
+  const map = {
+    green: { bg: "rgba(61,220,132,0.16)", fg: GREEN },
+    red: { bg: "rgba(255,107,101,0.16)", fg: RED_DARK },
+    amber: { bg: "rgba(240,180,41,0.18)", fg: AMBER },
+    blue: { bg: "rgba(96,165,250,0.16)", fg: "#60A5FA" },
+    gray: { bg: "rgba(255,255,255,0.08)", fg: MUTED },
+  };
+  const c = map[tone] || map.gray;
+  return (
+    <span style={{ background: c.bg, color: c.fg, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, whiteSpace: "nowrap" }}>
+      {text}
+    </span>
+  );
+}
+function statusTone(status) {
+  if (status === "Ativa" || status === "Ativo" || status === "Pago") return "green";
+  if (status === "Ativa Pendente") return "blue";
+  if (status === "Inadimplente" || status === "Pendente") return "amber";
+  if (status === "Cancelada" || status === "Cancelado") return "red";
+  return "gray";
+}
+
+function Modal({ title, onClose, children, wide }) {
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(23,24,26,0.55)", display: "flex",
+      alignItems: "flex-start", justifyContent: "center", padding: "5vh 16px", zIndex: 60, overflowY: "auto",
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: SURFACE, borderRadius: 14, width: "100%", maxWidth: wide ? 860 : 560,
+        boxShadow: "0 20px 60px rgba(0,0,0,0.3)", overflow: "hidden",
+      }}>
+        <div style={{ background: BLACK, padding: "16px 22px", display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: `3px solid ${RED}` }}>
+          <h2 style={{ color: "#fff", fontSize: 16, fontWeight: 700, margin: 0 }}>{title}</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: SILVER, padding: 4 }}><X size={20} /></button>
+        </div>
+        <div style={{ padding: 22, maxHeight: "80vh", overflowY: "auto" }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function KpiCard({ icon: Icon, label, value, accent, sub, subTone, glow }) {
+  return (
+    <div className="ancore-card" style={{
+      background: SURFACE, borderRadius: CARD_RADIUS, padding: "18px 20px", flex: 1, minWidth: 190,
+      border: `1px solid ${glow ? RED : SILVER}`, borderTop: `3px solid ${accent || RED}`, display: "flex", flexDirection: "column", gap: 9,
+      boxShadow: glow ? `${CARD_SHADOW}, 0 0 24px rgba(219,57,55,0.25)` : CARD_SHADOW,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, color: MUTED }}>
+        <Icon size={15} />
+        <span style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
+      </div>
+      <span style={{ fontSize: 23, fontWeight: 800, color: TEXT, letterSpacing: "-0.01em" }}>{value}</span>
+      {sub && (
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: subTone === "down" ? RED_DARK : subTone === "up" ? GREEN : MUTED, display: "flex", alignItems: "center", gap: 4 }}>
+          {subTone === "up" && <TrendingUp size={12} />}
+          {subTone === "down" && <TrendingDown size={12} />}
+          {sub}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function MiniStat({ label, valor, data }) {
+  return (
+    <div style={{ flex: 1, background: SURFACE_ALT, borderRadius: 8, padding: "10px 12px", minWidth: 0 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", color: MUTED, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+      <div style={{ fontSize: 14.5, fontWeight: 800, color: TEXT }}>{formatBRL(valor)}</div>
+      <div style={{ fontSize: 10.5, color: MUTED, marginTop: 2 }}>Previsto: {formatDateBR(data)}</div>
+    </div>
+  );
+}
+
+function SectionCard({ title, right, children, subtitle }) {
+  return (
+    <div className="ancore-card" style={{ background: SURFACE, borderRadius: CARD_RADIUS, border: `1px solid ${SILVER}`, padding: 22, boxShadow: CARD_SHADOW }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: subtitle ? 4 : 16 }}>
+        <h3 style={{ fontSize: 12.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: MUTED, margin: 0 }}>{title}</h3>
+        {right}
+      </div>
+      {subtitle && <div style={{ fontSize: 12, color: MUTED, marginBottom: 16 }}>{subtitle}</div>}
+      {children}
+    </div>
+  );
+}
+
+function DataTable({ columns, rows, onEdit, onDelete, onRowClick, emptyText, sortable, pageSize }) {
+  const [sort, setSort] = useState(null); // { key, dir }
+  const [page, setPage] = useState(0);
+
+  const sortedRows = useMemo(() => {
+    if (!sort) return rows;
+    const { key, dir } = sort;
+    return [...rows].sort((a, b) => {
+      const av = a[key], bv = b[key];
+      const an = parseFloat(av), bn = parseFloat(bv);
+      const bothNumeric = av !== "" && bv !== "" && av !== undefined && bv !== undefined && !isNaN(an) && !isNaN(bn) && String(an) === String(av).trim();
+      const cmp = bothNumeric ? an - bn : String(av ?? "").localeCompare(String(bv ?? ""));
+      return dir === "asc" ? cmp : -cmp;
+    });
+  }, [rows, sort]);
+
+  useEffect(() => { setPage(0); }, [rows.length, pageSize]);
+
+  const totalPages = pageSize ? Math.max(1, Math.ceil(sortedRows.length / pageSize)) : 1;
+  const pageRows = pageSize ? sortedRows.slice(page * pageSize, page * pageSize + pageSize) : sortedRows;
+
+  const toggleSort = (key) => {
+    if (!sortable) return;
+    setSort((s) => (s && s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
+  };
+
+  return (
+    <div style={{ background: SURFACE, borderRadius: 12, border: `1px solid ${SILVER}`, overflow: "hidden" }}>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 720 }}>
+          <thead>
+            <tr style={{ background: BLACK, position: "sticky", top: 0, zIndex: 1 }}>
+              {columns.map((c) => (
+                <th key={c.key} style={{ ...thStyle, cursor: sortable ? "pointer" : "default", userSelect: "none" }} onClick={() => toggleSort(c.key)}>
+                  {c.label}{sortable && sort && sort.key === c.key ? (sort.dir === "asc" ? " ▲" : " ▼") : ""}
+                </th>
+              ))}
+              {(onEdit || onDelete) && <th style={thStyle}></th>}
+            </tr>
+          </thead>
+          <tbody>
+            {pageRows.length === 0 ? (
+              <tr><td colSpan={columns.length + 1} style={{ padding: 30, textAlign: "center", color: MUTED }}>{emptyText || "Nenhum registro."}</td></tr>
+            ) : pageRows.map((row, i) => (
+              <tr
+                key={row.id}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                style={{ background: i % 2 ? SURFACE_ALT : SURFACE, borderBottom: `1px solid ${BORDER_SOFT}`, cursor: onRowClick ? "pointer" : "default" }}
+              >
+                {columns.map((c) => <td key={c.key} style={cellStyle}>{c.render ? c.render(row) : (row[c.key] ?? "—")}</td>)}
+                {(onEdit || onDelete) && (
+                  <td style={{ ...cellStyle, whiteSpace: "nowrap" }} onClick={(e) => e.stopPropagation()}>
+                    {onEdit && <button onClick={() => onEdit(row)} style={iconBtn}><Pencil size={14} /></button>}
+                    {onDelete && <button onClick={() => onDelete(row.id)} style={{ ...iconBtn, color: RED }}><Trash2 size={14} /></button>}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {pageSize && sortedRows.length > pageSize && (
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 16px", borderTop: `1px solid ${BORDER_SOFT}`, fontSize: 12.5, color: MUTED }}>
+          <span>{sortedRows.length} registro(s) · página {page + 1} de {totalPages}</span>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0} style={{ ...iconBtn, opacity: page === 0 ? 0.4 : 1 }}><ChevronLeft size={16} /></button>
+            <button onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))} disabled={page >= totalPages - 1} style={{ ...iconBtn, opacity: page >= totalPages - 1 ? 0.4 : 1 }}><ChevronRight size={16} /></button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------
+   Formulário genérico dirigido por schema
+--------------------------------------------------------------- */
+function LookupSelect({ options, value, onChange, placeholder }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const selected = options.find((o) => o.id === value);
+  const filtered = options.filter((o) => !query || o.label.toLowerCase().includes(query.toLowerCase()));
+  return (
+    <div style={{ position: "relative" }}>
+      <TextInput
+        placeholder={placeholder || "Buscar associado…"}
+        value={open ? query : (selected ? selected.label : "")}
+        onFocus={() => { setOpen(true); setQuery(""); }}
+        onChange={(e) => setQuery(e.target.value)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && (
+        <div style={{ position: "absolute", top: 42, left: 0, right: 0, background: SURFACE, border: `1px solid ${SILVER}`, borderRadius: 8, boxShadow: "0 10px 24px rgba(0,0,0,0.14)", zIndex: 30, maxHeight: 220, overflowY: "auto" }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: "10px 14px", fontSize: 13, color: MUTED }}>Nenhum associado encontrado. Cadastre-o primeiro na Carteira.</div>
+          ) : filtered.map((o) => (
+            <button key={o.id} onMouseDown={(e) => e.preventDefault()} onClick={() => { onChange(o.id); setOpen(false); }}
+              style={{ display: "block", width: "100%", textAlign: "left", padding: "9px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 13, borderBottom: "1px solid #F1F1F2" }}>
+              {o.label}{o.sub ? <span style={{ color: MUTED }}> · {o.sub}</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SchemaForm({ schema, initial, onChange, extra, lookupData }) {
+  return (
+    <div className="grid-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+      {schema.map((f) => {
+        const value = initial[f.key] ?? "";
+        const set = (e) => onChange(f.key, e.target.value);
+        return (
+          <Field key={f.key} label={f.label} span={f.span}>
+            {f.type === "lookup" ? (
+              <LookupSelect options={(lookupData && lookupData[f.key]) || []} value={value} onChange={(v) => onChange(f.key, v)} />
+            ) : f.type === "select" ? (
+              <Select options={f.options} value={value} onChange={set} />
+            ) : f.type === "textarea" ? (
+              <TextArea rows={3} value={value} onChange={set} />
+            ) : (
+              <TextInput type={f.type || "text"} value={value} onChange={set} placeholder={f.placeholder} inputMode={f.type === "number" ? "decimal" : undefined} step={f.type === "number" ? "0.01" : undefined} />
+            )}
+          </Field>
+        );
+      })}
+      {extra}
+    </div>
+  );
+}
+
+function CrudModal({ title, schema, initial, requiredKey, onSave, onCancel, computeSummary, extraSection, wide, lookupData }) {
+  const [data, setData] = useState(initial || {});
+  const onChange = (k, v) => setData((s) => ({ ...s, [k]: v }));
+  const summary = computeSummary ? computeSummary(data) : null;
+  return (
+    <Modal title={title} onClose={onCancel} wide={wide}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <SchemaForm schema={schema} initial={data} onChange={onChange} lookupData={lookupData} />
+        {extraSection && extraSection(data, onChange)}
+        {summary}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button onClick={onCancel} style={btnGhost}>Cancelar</button>
+          <button
+            onClick={() => (!requiredKey || (data[requiredKey] || "").toString().trim()) && onSave(data)}
+            style={btnPrimary}
+          ><Save size={15} /> Salvar</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function DocumentosField({ label, tipos, value, onChange }) {
+  const docs = value || [];
+  const [tipo, setTipo] = useState(tipos[0]);
+  const [nome, setNome] = useState("");
+  const add = () => {
+    if (!nome.trim()) return;
+    onChange([{ tipo, nome, data: new Date().toISOString().slice(0, 10) }, ...docs]);
+    setNome("");
+  };
+  const remove = (i) => onChange(docs.filter((_, idx) => idx !== i));
+  return (
+    <div>
+      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: MUTED, display: "block", marginBottom: 8 }}>{label}</span>
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+        <Select options={tipos} value={tipo} onChange={(e) => setTipo(e.target.value)} style={{ maxWidth: 200 }} />
+        <TextInput placeholder="Nome do arquivo / anotação" value={nome} onChange={(e) => setNome(e.target.value)} style={{ flex: 1, minWidth: 160 }} />
+        <button onClick={add} style={btnGhost}><Plus size={14} /> Adicionar</button>
+      </div>
+      {docs.length === 0 ? (
+        <div style={{ color: MUTED, fontSize: 12.5 }}>Nenhum documento anexado.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {docs.map((d, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: SURFACE_ALT, borderRadius: 8, padding: "8px 12px", fontSize: 12.5 }}>
+              <span><b>{d.tipo}</b> — {d.nome} <span style={{ color: MUTED }}>· {formatDateBR(d.data)}</span></span>
+              <button onClick={() => remove(i)} style={{ ...iconBtn, color: RED }}><Trash2 size={13} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------
+   Schemas por módulo
+--------------------------------------------------------------- */
+// Carteira de Associados: exclusivamente dados pessoais do cliente.
+const ASSOCIADO_SCHEMA = [
+  { key: "nomeCompleto", label: "Nome completo", span: 2 },
+  { key: "cpf", label: "CPF", placeholder: "000.000.000-00" },
+  { key: "telefone", label: "Telefone", placeholder: "(00) 00000-0000" },
+  { key: "email", label: "E-mail", type: "email" },
+  { key: "origem", label: "Origem", type: "select", options: ORIGEM_OPTS },
+  { key: "dataNascimento", label: "Data de nascimento", type: "date" },
+];
+
+// Vendas: cada registro é uma placa/contrato vinculado a um associado existente (lookup).
+// Recorrência, boletos e mensalidade recorrente NÃO fazem parte do cadastro — são calculados
+// automaticamente pelo motor financeiro a partir do status e da data da venda.
+const VENDA_SCHEMA = [
+  { key: "data", label: "Data do contrato", type: "date" },
+  { key: "associadoId", label: "Associado", type: "lookup", span: 2 },
+  { key: "veiculoModelo", label: "Modelo do veículo" },
+  { key: "veiculoPlaca", label: "Placa", placeholder: "ABC1D23" },
+  { key: "plano", label: "Plano", type: "select", options: PLANO_OPTS },
+  { key: "status", label: "Status", type: "select", options: VENDA_STATUS_OPTS },
+  { key: "valorAdesao", label: "Valor da adesão (R$)", type: "number", placeholder: "249,90" },
+  { key: "consultoria", label: "Consultoria especializada (R$)", type: "select", options: CONSULTORIA_VALORES.map(String) },
+  { key: "primeiraMensalidade", label: "Valor da 1ª mensalidade (R$)", type: "number", placeholder: "179,50" },
+  { key: "primeiroBoletoManual", label: "Data do 1º boleto (editar apenas se for diferente da regra automática)", type: "date" },
+  { key: "dataUltimoBoletoPago", label: "Data do último boleto pago (cancelamento/inadimplência)", type: "date" },
+  { key: "observacoes", label: "Observações", type: "textarea", span: 2 },
+];
+
+// Financeiro agora é 100% automático (Vendas + Equipe + Indicações). O único lançamento manual
+// que resta é despesas/outras receitas do mês, que não têm como ser calculadas automaticamente.
+const DESPESA_SCHEMA = [
+  { key: "competencia", label: "Competência", type: "month", span: 2 },
+  { key: "despesas", label: "Despesas (R$)", type: "number" },
+  { key: "outrasReceitas", label: "Outras receitas (R$)", type: "number" },
+  { key: "observacoes", label: "Observações", type: "textarea", span: 2 },
+];
+
+const INDICACAO_SCHEMA = [
+  { key: "indicadorId", label: "Associado que indicou", type: "lookup", span: 2 },
+  { key: "indicadoId", label: "Novo associado indicado", type: "lookup", span: 2 },
+  { key: "data", label: "Data da indicação", type: "date" },
+  { key: "valorComissao", label: "Valor da comissão (R$)", type: "number" },
+  { key: "status", label: "Status", type: "select", options: INDIC_STATUS_OPTS },
+];
+
+const CONSULTOR_SCHEMA = [
+  { key: "nome", label: "Nome do consultor", span: 2 },
+  { key: "status", label: "Status", type: "select", options: STATUS_EQUIPE_OPTS },
+  { key: "dataEntrada", label: "Data de entrada", type: "date" },
+  { key: "cargo", label: "Cargo", type: "select", options: CARGO_OPTS },
+  { key: "telefone", label: "Telefone" },
+  { key: "observacoes", label: "Observações", type: "textarea", span: 2 },
+];
+
+const PRODUCAO_SCHEMA = [
+  { key: "competencia", label: "Competência", type: "month", span: 2 },
+  { key: "consultorId", label: "Consultor", type: "lookup", span: 2 },
+  { key: "placasVendidas", label: "Placas vendidas", type: "number" },
+  { key: "placasAtivas", label: "Placas ativas", type: "number" },
+  { key: "observacoes", label: "Observações", type: "textarea", span: 2 },
+];
+
+/* ---------------------------------------------------------------
+   Navegação
+--------------------------------------------------------------- */
+const NAV = [
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "carteira", label: "Carteira de associados", icon: Users },
+  { key: "financeiro", label: "Financeiro", icon: Wallet },
+  { key: "vendas", label: "Vendas", icon: ShoppingCart },
+  { key: "equipe", label: "Equipe", icon: UserCog },
+  { key: "metas", label: "Metas", icon: Target },
+  { key: "recorrencia", label: "Recorrência", icon: Repeat },
+  { key: "aniversariantes", label: "Aniversariantes", icon: Gift },
+  { key: "indicacoes", label: "Indicações", icon: Share2 },
+  { key: "relatorios", label: "Relatórios", icon: ClipboardList },
+  { key: "configuracoes", label: "Configurações", icon: Settings },
+];
+
+/* =================================================================
+   APP
+================================================================= */
+export default function App() {
+  const [tab, setTab] = useState("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [globalQuery, setGlobalQuery] = useState("");
+  const [selectedAssociadoId, setSelectedAssociadoId] = useState(null);
+
+  const associadosC = useCollection(K.associados);
+  const vendasC = useCollection(K.vendas);
+  const financeiroC = useCollection(K.financeiro);
+  const metasC = useCollection(K.metas);
+  const indicacoesC = useCollection(K.indicacoes);
+  const equipeC = useCollection(K.equipe);
+  const producaoEquipeC = useCollection(K.producaoEquipe);
+  const { config, setConfig, loading: configLoading } = useConfig();
+
+  const loading = associadosC.loading || vendasC.loading || financeiroC.loading || metasC.loading || indicacoesC.loading || equipeC.loading || producaoEquipeC.loading || configLoading;
+
+  const metrics = usePortfolioMetrics(vendasC.items);
+
+  const associadoOptions = useMemo(
+    () => associadosC.items.map((a) => ({ id: a.id, label: a.nomeCompleto, sub: a.cpf })),
+    [associadosC.items]
+  );
+  const associadoNome = useCallback((id) => associadosC.items.find((a) => a.id === id)?.nomeCompleto || "—", [associadosC.items]);
+
+  const consultorOptions = useMemo(
+    () => equipeC.items.map((c) => ({ id: c.id, label: c.nome, sub: c.cargo })),
+    [equipeC.items]
+  );
+  const consultorNome = useCallback((id) => equipeC.items.find((c) => c.id === id)?.nome || "—", [equipeC.items]);
+
+  const toggleSelecionadoPlanoCarreira = (consultor) => {
+    const jaSelecionados = equipeC.items.filter((c) => c.selecionadoPlanoCarreira && c.id !== consultor.id);
+    if (!consultor.selecionadoPlanoCarreira && jaSelecionados.length >= 2) {
+      alert("Só é possível manter 2 consultores selecionados para o Plano de Carreira. Desmarque um antes de selecionar outro.");
+      return;
+    }
+    equipeC.save({ ...consultor, selecionadoPlanoCarreira: !consultor.selecionadoPlanoCarreira });
+  };
+
+  const [modalAssociado, setModalAssociado] = useState(null);
+  const [modalVenda, setModalVenda] = useState(null);
+  const [modalFin, setModalFin] = useState(null);
+  const [modalMeta, setModalMeta] = useState(null);
+  const [modalIndicacao, setModalIndicacao] = useState(null);
+  const [modalConsultor, setModalConsultor] = useState(null);
+  const [modalProducao, setModalProducao] = useState(null);
+
+  const removeAssociado = useCallback((id) => {
+    const temVendas = vendasC.items.some((v) => v.associadoId === id);
+    if (temVendas) {
+      alert("Este associado possui vendas (placas) vinculadas e não pode ser excluído, para não perder o histórico. Remova ou reatribua as vendas primeiro.");
+      return;
+    }
+    associadosC.remove(id);
+  }, [vendasC.items, associadosC]);
+
+  const globalResults = useMemo(() => {
+    const q = globalQuery.trim().toLowerCase();
+    if (!q) return [];
+    const hits = [];
+    associadosC.items.forEach((a) => {
+      if ([a.nomeCompleto, a.cpf, a.telefone, a.email].some((v) => (v || "").toLowerCase().includes(q))) {
+        hits.push({ type: "Associado", label: a.nomeCompleto, action: () => { setTab("carteira"); setSelectedAssociadoId(a.id); } });
+      }
+    });
+    vendasC.items.forEach((v) => {
+      if ([associadoNome(v.associadoId), v.veiculoPlaca, v.veiculoModelo].some((x) => (x || "").toLowerCase().includes(q))) {
+        hits.push({ type: "Venda", label: `${associadoNome(v.associadoId)} — ${v.veiculoPlaca || "placa"}`, action: () => setTab("vendas") });
+      }
+    });
+    return hits.slice(0, 8);
+  }, [globalQuery, associadosC.items, vendasC.items, associadoNome]);
+
+  const goToAssociado = (a) => { setTab("carteira"); setSelectedAssociadoId(a.id || a); };
+
+  return (
+    <div style={{ fontFamily: "'Inter', system-ui, -apple-system, sans-serif", background: PAGE_BG, minHeight: "100%", color: TEXT, display: "flex" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        @keyframes ancoreFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+        .ancore-card { animation: ancoreFadeIn 0.25s ease both; }
+        button { transition: filter 0.15s ease, opacity 0.15s ease, transform 0.1s ease; }
+        button:hover { filter: brightness(1.12); }
+        button:active { transform: scale(0.98); }
+        input, select, textarea { transition: border-color 0.15s ease; }
+        input:focus, select:focus, textarea:focus { border-color: ${RED} !important; outline: none; }
+        @media (max-width: 900px) {
+          .grid-2col { grid-template-columns: 1fr !important; }
+          .grid-3col { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
+
+      {/* Sidebar */}
+      <div style={{
+        width: sidebarOpen ? 232 : 64, transition: "width 0.15s ease", background: BLACK, minHeight: "100vh",
+        display: "flex", flexDirection: "column", borderRight: `3px solid ${RED}`, flexShrink: 0,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: sidebarOpen ? "space-between" : "center", padding: "18px 16px" }}>
+          {sidebarOpen && (
+            <div>
+              <div style={{ color: RED, fontSize: 10, fontWeight: 800, letterSpacing: "0.14em" }}>ANCORE</div>
+              <div style={{ color: "#fff", fontSize: 13.5, fontWeight: 700 }}>CRM Financeiro</div>
+            </div>
+          )}
+          <button onClick={() => setSidebarOpen((s) => !s)} style={{ background: "none", border: "none", color: SILVER, cursor: "pointer", padding: 4 }}>
+            {sidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+          </button>
+        </div>
+        <nav style={{ display: "flex", flexDirection: "column", gap: 2, padding: "6px 10px", flex: 1 }}>
+          {NAV.map((n) => {
+            const Icon = n.icon;
+            const active = tab === n.key;
+            return (
+              <button
+                key={n.key}
+                onClick={() => { setTab(n.key); setSelectedAssociadoId(null); }}
+                title={n.label}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, background: active ? RED : "transparent",
+                  color: active ? "#fff" : SILVER, border: "none", borderRadius: 8,
+                  padding: sidebarOpen ? "10px 12px" : "10px", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  justifyContent: sidebarOpen ? "flex-start" : "center", whiteSpace: "nowrap", overflow: "hidden",
+                }}
+              >
+                <Icon size={16} style={{ flexShrink: 0 }} />
+                {sidebarOpen && n.label}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+
+      {/* Main */}
+      <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
+        {/* Topbar */}
+        <div style={{ background: SURFACE, borderBottom: `1px solid ${SILVER}`, padding: "14px 24px", display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ position: "relative", width: 360, maxWidth: "50vw" }}>
+            <Search size={15} style={{ position: "absolute", left: 12, top: 11, color: MUTED }} />
+            <TextInput
+              placeholder="Buscar associado, CPF, placa, consultor…"
+              value={globalQuery}
+              onChange={(e) => setGlobalQuery(e.target.value)}
+              style={{ paddingLeft: 34 }}
+            />
+            {globalResults.length > 0 && (
+              <div style={{ position: "absolute", top: 42, left: 0, right: 0, background: SURFACE, border: `1px solid ${SILVER}`, borderRadius: 10, boxShadow: "0 10px 30px rgba(0,0,0,0.12)", zIndex: 40, overflow: "hidden" }}>
+                {globalResults.map((r, i) => (
+                  <button key={i} onClick={() => { r.action(); setGlobalQuery(""); }} style={{
+                    display: "flex", justifyContent: "space-between", width: "100%", textAlign: "left",
+                    padding: "10px 14px", background: "none", border: "none", borderBottom: i < globalResults.length - 1 ? "1px solid #F1F1F2" : "none",
+                    cursor: "pointer", fontSize: 13,
+                  }}>
+                    <span>{r.label}</span>
+                    <span style={{ color: MUTED, fontSize: 11 }}>{r.type}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={{ marginLeft: "auto", fontSize: 12.5, color: MUTED, fontWeight: 600 }}>
+            {NAV.find((n) => n.key === tab)?.label}
+          </div>
+        </div>
+
+        <div style={{ padding: "22px 24px 60px", flex: 1 }}>
+          {loading ? (
+            <div style={{ color: MUTED, fontSize: 14, padding: 40, textAlign: "center" }}>Carregando dados…</div>
+          ) : tab === "dashboard" ? (
+            <Dashboard associados={associadosC.items} vendas={vendasC.items} producaoEquipe={producaoEquipeC.items} indicacoes={indicacoesC.items} metas={metasC.items} metrics={metrics} associadoNome={associadoNome} config={config} consultores={equipeC.items} />
+          ) : tab === "carteira" ? (
+            selectedAssociadoId ? (
+              <FichaAssociado
+                associado={associadosC.items.find((a) => a.id === selectedAssociadoId)}
+                vendas={vendasC.items.filter((v) => v.associadoId === selectedAssociadoId)}
+                indicacoes={indicacoesC.items}
+                associadoNome={associadoNome}
+                onBack={() => setSelectedAssociadoId(null)}
+                onSave={associadosC.save}
+                onNovaVenda={() => setModalVenda({ mode: "new", data: { associadoId: selectedAssociadoId } })}
+                onEditVenda={(v) => setModalVenda({ mode: "edit", data: v })}
+              />
+            ) : (
+              <Carteira
+                associados={associadosC.items}
+                vendas={vendasC.items}
+                onNew={() => setModalAssociado({ mode: "new" })}
+                onEdit={(a) => setModalAssociado({ mode: "edit", data: a })}
+                onDelete={removeAssociado}
+                onOpen={(a) => setSelectedAssociadoId(a.id)}
+              />
+            )
+          ) : tab === "financeiro" ? (
+            <Financeiro
+              vendas={vendasC.items} producaoEquipe={producaoEquipeC.items} indicacoes={indicacoesC.items} config={config} consultores={equipeC.items} metrics={metrics}
+              despesas={financeiroC.items} onNewDespesa={() => setModalFin({ mode: "new" })} onEditDespesa={(f) => setModalFin({ mode: "edit", data: f })} onDeleteDespesa={financeiroC.remove}
+            />
+          ) : tab === "vendas" ? (
+            <Vendas
+              vendas={vendasC.items} associados={associadosC.items} metrics={metrics} associadoNome={associadoNome}
+              onNew={() => associadosC.items.length === 0 ? alert("Cadastre um associado na Carteira antes de lançar uma venda.") : setModalVenda({ mode: "new" })}
+              onEdit={(v) => setModalVenda({ mode: "edit", data: v })} onDelete={vendasC.remove} onOpenAssociado={goToAssociado}
+            />
+          ) : tab === "equipe" ? (
+            <Equipe
+              consultores={equipeC.items} producao={producaoEquipeC.items} consultorNome={consultorNome}
+              onNewConsultor={() => setModalConsultor({ mode: "new" })} onEditConsultor={(c) => setModalConsultor({ mode: "edit", data: c })} onDeleteConsultor={equipeC.remove}
+              onNewProducao={() => consultorOptions.length === 0 ? alert("Cadastre um consultor antes de lançar produção.") : setModalProducao({ mode: "new" })}
+              onEditProducao={(p) => setModalProducao({ mode: "edit", data: p })} onDeleteProducao={producaoEquipeC.remove}
+              onToggleSelecionado={toggleSelecionadoPlanoCarreira}
+            />
+          ) : tab === "metas" ? (
+            <Metas metas={metasC.items} vendas={vendasC.items} producaoEquipe={producaoEquipeC.items} indicacoes={indicacoesC.items} config={config} consultores={equipeC.items} metrics={metrics} onNew={() => setModalMeta({ mode: "new" })} onEdit={(m) => setModalMeta({ mode: "edit", data: m })} onDelete={metasC.remove} />
+          ) : tab === "recorrencia" ? (
+            <Recorrencia vendas={vendasC.items} producaoEquipe={producaoEquipeC.items} indicacoes={indicacoesC.items} config={config} consultores={equipeC.items} associadoNome={associadoNome} metrics={metrics} />
+          ) : tab === "aniversariantes" ? (
+            <Aniversariantes associados={associadosC.items} />
+          ) : tab === "indicacoes" ? (
+            <Indicacoes indicacoes={indicacoesC.items} associadoNome={associadoNome} onNew={() => setModalIndicacao({ mode: "new" })} onEdit={(i) => setModalIndicacao({ mode: "edit", data: i })} onDelete={indicacoesC.remove} />
+          ) : tab === "relatorios" ? (
+            <Relatorios associados={associadosC.items} vendas={vendasC.items} associadoNome={associadoNome} />
+          ) : (
+            <Configuracoes config={config} setConfig={setConfig} />
+          )}
+        </div>
+
+        <div style={{ padding: "10px 24px", borderTop: `1px solid ${BORDER_SOFT}`, textAlign: "center", fontSize: 11, color: MUTED }}>
+          CRM Financeiro Ancore · v1.0 · Última atualização: {new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+        </div>
+      </div>
+
+      {modalAssociado && (
+        <CrudModal
+          title={modalAssociado.mode === "edit" ? "Editar associado" : "Novo associado"}
+          schema={ASSOCIADO_SCHEMA}
+          initial={modalAssociado.data || {}}
+          requiredKey="nomeCompleto"
+          onSave={(d) => { associadosC.save(d); setModalAssociado(null); }}
+          onCancel={() => setModalAssociado(null)}
+          wide
+        />
+      )}
+      {modalVenda && (
+        <CrudModal
+          title={modalVenda.mode === "edit" ? "Editar venda" : "Nova venda"}
+          schema={VENDA_SCHEMA}
+          initial={modalVenda.data || {}}
+          requiredKey="associadoId"
+          lookupData={{ associadoId: associadoOptions }}
+          extraSection={(data, onChange) => (
+            <DocumentosField
+              label="Documentos do veículo (desta venda/placa)"
+              tipos={["CRLV", "Termo de Adesão", "Laudo de Vistoria", "Fotos da Vistoria", "Outros"]}
+              value={data.documentosVeiculo}
+              onChange={(v) => onChange("documentosVeiculo", v)}
+            />
+          )}
+          onSave={(d) => { vendasC.save(d); setModalVenda(null); }}
+          onCancel={() => setModalVenda(null)}
+          wide
+        />
+      )}
+      {modalFin && (
+        <CrudModal
+          title={modalFin.mode === "edit" ? "Editar lançamento" : "Lançar despesas/outras receitas"}
+          schema={DESPESA_SCHEMA}
+          initial={modalFin.data || {}}
+          requiredKey="competencia"
+          onSave={(d) => {
+            const existing = financeiroC.items.find((f) => f.competencia === d.competencia && f.id !== d.id);
+            financeiroC.save({ ...d, id: d.id || existing?.id });
+            setModalFin(null);
+          }}
+          onCancel={() => setModalFin(null)}
+        />
+      )}
+      {modalMeta && (
+        <MetaModal
+          initial={modalMeta.data}
+          onSave={(d) => { metasC.save(d); setModalMeta(null); }}
+          onCancel={() => setModalMeta(null)}
+        />
+      )}
+      {modalIndicacao && (
+        <IndicacaoModal
+          initial={modalIndicacao.data || {}}
+          associadoOptions={associadoOptions}
+          onSave={(d) => { indicacoesC.save(d); setModalIndicacao(null); }}
+          onCancel={() => setModalIndicacao(null)}
+        />
+      )}
+      {modalConsultor && (
+        <CrudModal
+          title={modalConsultor.mode === "edit" ? "Editar consultor" : "Novo consultor"}
+          schema={CONSULTOR_SCHEMA}
+          initial={modalConsultor.data || {}}
+          requiredKey="nome"
+          onSave={(d) => { equipeC.save(d); setModalConsultor(null); }}
+          onCancel={() => setModalConsultor(null)}
+          wide
+        />
+      )}
+      {modalProducao && (
+        <CrudModal
+          title={modalProducao.mode === "edit" ? "Editar produção" : "Lançar produção mensal"}
+          schema={PRODUCAO_SCHEMA}
+          initial={modalProducao.data || {}}
+          requiredKey="consultorId"
+          lookupData={{ consultorId: consultorOptions }}
+          onSave={(d) => {
+            const existing = producaoEquipeC.items.find((p) => p.competencia === d.competencia && p.consultorId === d.consultorId && p.id !== d.id);
+            producaoEquipeC.save({ ...d, id: d.id || existing?.id });
+            setModalProducao(null);
+          }}
+          onCancel={() => setModalProducao(null)}
+          wide
+        />
+      )}
+    </div>
+  );
+}
+
+/* =================================================================
+   DASHBOARD
+================================================================= */
+function Dashboard({ associados, vendas, producaoEquipe, indicacoes, metas, metrics, associadoNome, config, consultores }) {
+  const hojeCm = currentMonth();
+  const hoje = new Date().toISOString().slice(0, 10);
+  const [mes, setMes] = useState(hojeCm); // período de análise selecionável no cabeçalho
+  const finPeriodo = useMemo(() => computeFinanceiroMes(vendas, producaoEquipe, indicacoes, config, mes, consultores), [vendas, producaoEquipe, indicacoes, config, mes, consultores]);
+
+  const metaMes = metas.find((m) => m.tipo === "mensal" && m.periodo === mes);
+  const percentualMeta = metaMes && toNumber(metaMes.metaFinanceira) ? Math.min(999, (finPeriodo.totalPrevisto / toNumber(metaMes.metaFinanceira)) * 100) : null;
+  const placasRealizadasMes = vendas.filter((v) => (v.data || "").startsWith(mes)).length;
+  const metaPlacasPct = metaMes && toNumber(metaMes.metaPlacas) ? Math.min(100, (placasRealizadasMes / toNumber(metaMes.metaPlacas)) * 100) : null;
+
+  const producaoEquipeMesAtual = producaoEquipe.filter((p) => p.competencia === mes).reduce((s, p) => s + toNumber(p.placasVendidas), 0);
+  const metaEquipePct = metaMes && toNumber(metaMes.metaVendas) ? Math.min(100, (producaoEquipeMesAtual / toNumber(metaMes.metaVendas)) * 100) : null;
+
+  // Datas reais do calendário financeiro da Ancore, aplicadas ao período selecionado.
+  const datasCalendario = Object.values(CALENDARIO).map((c) => ({ ...c, dataNf: dataDoMes(mes, c.nf), dataPagamento: dataDoMes(mes, c.pagamento) }));
+
+
+
+  const consultoriasAtivasValor = vendas.filter((v) => v.status === "Ativa" && toNumber(v.consultoria) > 0).reduce((s, v) => s + toNumber(v.consultoria), 0);
+
+  const origemCount = {};
+  associados.forEach((a) => { const o = a.origem || "Outros"; origemCount[o] = (origemCount[o] || 0) + 1; });
+  const vendasPorOrigem = Object.entries(origemCount).map(([name, value]) => ({ name, value }));
+
+  // Últimos 12 meses, usando o mesmo motor de cálculo para todas as séries.
+  const ultimosMeses = [];
+  { let m = mes; for (let i = 0; i < 12; i++) { ultimosMeses.unshift(m); m = prevMonth(m); } }
+  const series = ultimosMeses.map((m) => {
+    const fin = computeFinanceiroMes(vendas, producaoEquipe, indicacoes, config, m, consultores);
+    const vendasDoMesArr = vendasDoMes(vendas, m);
+    return {
+      mes: monthLabel(m),
+      receita: fin.totalPrevisto,
+      vendasQtd: vendasDoMesArr.length,
+      recorrencia: fin.recorrenciaPrevista,
+      consultoria: fin.consultoriaPrevista,
+      producaoPessoal: fin.producaoPessoal,
+      producaoEquipe: fin.producaoEquipeTotal,
+    };
+  });
+
+  // Evolução da carteira: total de vendas acumulado (linha 1) x placas ativas (linha 2, proxy pela venda ativa hoje).
+  // (Não há histórico de status por competência — placas ativas é o melhor proxy disponível com os dados atuais.)
+  const vendasAtivasHoje = vendas.filter((v) => v.status === "Ativa" && v.data);
+  const vendasComData = vendas.filter((v) => v.data);
+  const carteiraPorMes = ultimosMeses.map((m) => ({
+    mes: monthLabel(m),
+    totalVendas: vendasComData.filter((v) => v.data <= `${m}-31`).length,
+    placasAtivas: vendasAtivasHoje.filter((v) => v.data <= `${m}-31`).length,
+  }));
+
+  // Insights automáticos exibidos como subtítulo de cada gráfico.
+  const nSeries = series.length;
+  const ultimoMes = series[nSeries - 1], penultimoMes = series[nSeries - 2];
+  const insightReceita = ultimoMes && penultimoMes ? trendText(ultimoMes.receita, penultimoMes.receita) : "Ainda não há dados suficientes.";
+  const insightVendas = ultimoMes && penultimoMes ? trendText(ultimoMes.vendasQtd, penultimoMes.vendasQtd) : "Ainda não há dados suficientes.";
+  const ultimos3Consultoria = series.slice(-3).map((s) => s.consultoria);
+  const mediaConsultoria = ultimos3Consultoria.reduce((a, b) => a + b, 0) / (ultimos3Consultoria.length || 1);
+  const varConsultoria = ultimos3Consultoria.length === 3 ? Math.max(...ultimos3Consultoria) - Math.min(...ultimos3Consultoria) : Infinity;
+  const insightConsultoria = ultimos3Consultoria.length < 3 ? "Ainda não há dados suficientes."
+    : (varConsultoria <= mediaConsultoria * 0.1 || mediaConsultoria === 0 ? "A consultoria apresentou estabilidade nos últimos três meses." : trendText(ultimoMes.consultoria, penultimoMes.consultoria));
+  const insightCarteira = carteiraPorMes.length ? `Carteira ativa cresceu de ${carteiraPorMes[0]?.placasAtivas || 0} para ${carteiraPorMes[carteiraPorMes.length - 1].placasAtivas} placas, enquanto o total de vendas foi de ${carteiraPorMes[0]?.totalVendas || 0} para ${carteiraPorMes[carteiraPorMes.length - 1].totalVendas}.` : "Ainda não há dados suficientes.";
+  const totalProducaoPessoal = series.reduce((s, x) => s + x.producaoPessoal, 0);
+  const totalProducaoEquipe = series.reduce((s, x) => s + x.producaoEquipe, 0);
+  const insightProducao = totalProducaoPessoal + totalProducaoEquipe > 0
+    ? `A equipe responde por ${((totalProducaoEquipe / (totalProducaoPessoal + totalProducaoEquipe)) * 100).toFixed(0)}% da produção nos últimos ${nSeries} meses.`
+    : "Ainda não há dados suficientes.";
+  const topOrigem = [...vendasPorOrigem].sort((a, b) => b.value - a.value)[0];
+  const totalOrigem = vendasPorOrigem.reduce((s, o) => s + o.value, 0);
+  const insightOrigem = topOrigem && totalOrigem ? `${topOrigem.name} é a principal origem, com ${((topOrigem.value / totalOrigem) * 100).toFixed(0)}% dos associados.` : "Ainda não há dados suficientes.";
+
+  // Plano de carreira: nível atual, próximo nível e evolução.
+  // Painel operacional do Plano de Carreira: usa a PRODUÇÃO DO MÊS ATUAL (pessoal + equipe), diferente do
+  // Financeiro (que trabalha com o mês anterior, para valores previstos de recebimento).
+  const planoAtual = computePlanoCarreiraDoMes(vendas, producaoEquipe, consultores, mes);
+  const idxNivel = PLANO_FAIXAS.findIndex((f) => f.nivel === planoAtual.faixa.nivel);
+  const proximoNivel = PLANO_FAIXAS[idxNivel + 1];
+  const evolucaoPct = proximoNivel ? Math.min(100, (planoAtual.producaoTotal / proximoNivel.min) * 100) : 100;
+  const faltamProximoNivel = proximoNivel ? Math.max(0, proximoNivel.min - planoAtual.producaoTotal) : 0;
+
+  // Alertas inteligentes — gerados a partir dos dados reais cadastrados.
+  const aniversariantesHoje = associados.filter((a) => a.dataNascimento && daysUntilBirthday(a.dataNascimento) === 0);
+  const boletosProximos = vendas.filter((v) => getPrimeiroBoleto(v) >= hoje && getPrimeiroBoleto(v) <= addDays(hoje, 7));
+  const diasNoMes = new Date(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0).getDate();
+  const diaAtual = new Date().getDate();
+  const metaEmRisco = metaMes && percentualMeta !== null && (diaAtual / diasNoMes) * 100 - percentualMeta > 15;
+  const pendencias = vendas.filter((v) => v.status === "Ativa Pendente");
+
+  // Lembretes automáticos de pós-venda: 1º contato (venda + 5 dias) e 2º contato (vencimento do 1º boleto).
+  const lembretes = vendas.flatMap((v) => [
+    { data: addDays(v.data, 5), texto: `1º contato pós-venda — ${associadoNome(v.associadoId)} (placa ${v.veiculoPlaca || "—"})`, venda: v },
+    { data: getPrimeiroBoleto(v), texto: `2º contato — confirmar 1º boleto de ${associadoNome(v.associadoId)} (placa ${v.veiculoPlaca || "—"})`, venda: v },
+  ]).filter((l) => l.data);
+  const tarefasHoje = lembretes.filter((l) => l.data === hoje);
+  const lembretesProximos = lembretes.filter((l) => l.data > hoje && l.data <= addDays(hoje, 3));
+
+  const alertas = [];
+  if (aniversariantesHoje.length) alertas.push({ tone: "green", texto: `${aniversariantesHoje.length} aniversariante(s) hoje: ${aniversariantesHoje.map((a) => a.nomeCompleto).join(", ")}` });
+  if (tarefasHoje.length) alertas.push({ tone: "green", texto: `${tarefasHoje.length} tarefa(s) de pós-venda para hoje` });
+  if (lembretesProximos.length) alertas.push({ tone: "amber", texto: `${lembretesProximos.length} lembrete(s) de pós-venda nos próximos 3 dias` });
+  if (boletosProximos.length) alertas.push({ tone: "amber", texto: `${boletosProximos.length} primeiro(s) boleto(s) vencendo nos próximos 7 dias` });
+  datasCalendario.forEach((c) => {
+    if (c.dataPagamento >= hoje && c.dataPagamento <= addDays(hoje, 7)) alertas.push({ tone: "gray", texto: `Pagamento de ${c.label} previsto para ${formatDateBR(c.dataPagamento)}` });
+    if (c.dataNf >= hoje && c.dataNf <= addDays(hoje, 3)) alertas.push({ tone: "amber", texto: `Envio da nota fiscal de ${c.label} até ${formatDateBR(c.dataNf)}` });
+  });
+  if (!finPeriodo.consultoriaElegivel && consultoriasAtivasValor > 0) alertas.push({ tone: "red", texto: "Consultoria especializada não elegível este mês — confira os requisitos no painel Financeiro" });
+  if (metrics.consultoriasAtivas < CONSULTORIA_PLACAS_ATIVAS_MINIMAS) alertas.push({ tone: "amber", texto: `Faltam ${CONSULTORIA_PLACAS_ATIVAS_MINIMAS - metrics.consultoriasAtivas} placa(s) com consultoria ativa para elegibilidade da Consultoria Especializada` });
+  if (metrics.placasAtivas >= RECORRENCIA_BLOCO && !finPeriodo.recorrenciaElegivel) alertas.push({ tone: "amber", texto: `Faltam ${Math.max(0, RECORRENCIA_VENDAS_MINIMAS_MES - finPeriodo.placasVendidasMesAnterior)} venda(s) no mês anterior para elegibilidade da Recorrência` });
+  if (proximoNivel) alertas.push({ tone: "gray", texto: `Faltam ${faltamProximoNivel} placa(s) para o próximo nível do Plano de Carreira (${proximoNivel.nivel})` });
+  if (metaEmRisco) alertas.push({ tone: "red", texto: `Meta de ${monthLabel(mes)} em risco: ${percentualMeta.toFixed(0)}% concluído no dia ${diaAtual} de ${diasNoMes}` });
+  if (metrics.inadimplentes > 0) alertas.push({ tone: "red", texto: `${metrics.inadimplentes} venda(s) com status Inadimplente` });
+  if (pendencias.length) alertas.push({ tone: "amber", texto: `${pendencias.length} venda(s) com status Ativa Pendente exigindo ação` });
+  alertas.push({ tone: "gray", texto: "Lembrete mensal: verifique a emissão das notas fiscais do período." });
+  const ORDEM_TONE = { red: 0, amber: 1, green: 2, gray: 3 };
+  alertas.sort((a, b) => ORDEM_TONE[a.tone] - ORDEM_TONE[b.tone]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: TEXT }}>Dashboard Financeiro</h1>
+          <div style={{ fontSize: 13, color: MUTED, marginTop: 4, textTransform: "capitalize" }}>
+            {new Date(`${mes}-01T00:00:00`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" })}
+          </div>
+        </div>
+        <Field label="Período de análise"><TextInput type="month" value={mes} onChange={(e) => setMes(e.target.value)} /></Field>
+      </div>
+
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+        <KpiCard icon={ShoppingCart} label="Adesões do mês" value={formatBRL(finPeriodo.adesoesMes)} sub={`${finPeriodo.totalAdesoesQtd} vendas`} />
+        <KpiCard icon={Users} label="Carteira" value={`${metrics.totalPlacasVendidas} Associados`} sub={`${metrics.placasAtivas} Ativos`} subTone="up" />
+        <KpiCard icon={UserCog} label="Consultoria" value={formatBRL(finPeriodo.consultoriaPrevista)} sub={`${metrics.consultoriasAtivas} Consultorias Ativas`} />
+        <KpiCard icon={CircleDollarSign} label="Total previsto" value={formatBRL(finPeriodo.totalPrevisto)} accent={RED_DARK} glow />
+      </div>
+
+      <div className="grid-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
+        {metaMes ? (
+          <div style={{ background: SURFACE, borderRadius: 12, border: `1px solid ${SILVER}`, padding: 20 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, textTransform: "capitalize" }}>Meta de {new Date(`${mes}-01T00:00:00`).toLocaleDateString("pt-BR", { month: "long" })}</h3>
+              <span style={{ fontSize: 22, fontWeight: 800, color: RED }}>{percentualMeta.toFixed(0)}%</span>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: MUTED, marginBottom: 6 }}>
+                <span>Barra financeira</span><span>{formatBRL(finPeriodo.totalPrevisto)} / {formatBRL(toNumber(metaMes.metaFinanceira))}</span>
+              </div>
+              <div style={{ height: 10, background: SURFACE_ALT, borderRadius: 999, overflow: "hidden" }}>
+                <div style={{ width: `${Math.min(100, percentualMeta)}%`, height: "100%", background: RED }} />
+              </div>
+            </div>
+
+            {metaPlacasPct !== null && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: MUTED, marginBottom: 6 }}>
+                  <span>Barra de produção</span><span>{placasRealizadasMes} Placas / {toNumber(metaMes.metaPlacas)} Placas</span>
+                </div>
+                <div style={{ height: 10, background: SURFACE_ALT, borderRadius: 999, overflow: "hidden" }}>
+                  <div style={{ width: `${metaPlacasPct}%`, height: "100%", background: "#5B8DEF" }} />
+                </div>
+              </div>
+            )}
+
+            {metaEquipePct !== null && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: MUTED, marginBottom: 6 }}>
+                  <span>Meta de vendas da equipe</span><span>{producaoEquipeMesAtual} / {toNumber(metaMes.metaVendas)} Placas · {metaEquipePct.toFixed(0)}%</span>
+                </div>
+                <div style={{ height: 10, background: SURFACE_ALT, borderRadius: 999, overflow: "hidden" }}>
+                  <div style={{ width: `${metaEquipePct}%`, height: "100%", background: GREEN }} />
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <MiniStat label="Premiações" valor={finPeriodo.premiacaoMensal + finPeriodo.premiacaoSemanal} data={dataDoMes(mes, CALENDARIO.premiacoes.pagamento)} />
+              <MiniStat label="Consultoria" valor={finPeriodo.consultoriaPrevista} data={dataDoMes(mes, CALENDARIO.consultoria.pagamento)} />
+              <MiniStat label="Plano de carreira" valor={finPeriodo.planoDeCarreiraPrevisto} data={dataDoMes(mes, CALENDARIO.planoDeCarreira.pagamento)} />
+            </div>
+          </div>
+        ) : <div />}
+
+        <div className="ancore-card" style={{ background: SURFACE, borderRadius: 12, border: `2px solid ${RED}`, padding: 20, boxShadow: `${CARD_SHADOW}, 0 0 28px rgba(219,57,55,0.18)` }}>
+          <h3 style={{ fontSize: 12.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: MUTED, margin: "0 0 14px" }}>Plano de carreira — mês atual</h3>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 24, alignItems: "center", marginBottom: 16 }}>
+            <div>
+              <div style={{ fontSize: 12, color: MUTED }}>{planoAtual.producaoTotal} placas em {monthLabel(mes)} (pessoal {planoAtual.producaoPessoal} + equipe {planoAtual.producaoEquipeTotal})</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: RED, textTransform: "uppercase" }}>{planoAtual.faixa.nivel}</div>
+              <div style={{ fontSize: 13, color: MUTED }}>Premiação: <b style={{ color: TEXT }}>{formatBRL(planoAtual.premiacaoLiberada)}</b></div>
+            </div>
+            {proximoNivel && (
+              <div style={{ marginLeft: "auto", textAlign: "right" }}>
+                <div style={{ fontSize: 11, color: MUTED, textTransform: "uppercase", letterSpacing: "0.05em" }}>Próximo nível</div>
+                <div style={{ fontSize: 16, fontWeight: 800 }}>{proximoNivel.nivel}</div>
+                <div style={{ fontSize: 13, color: MUTED }}>Premiação: <b style={{ color: TEXT }}>{formatBRL(proximoNivel.premiacao)}</b></div>
+              </div>
+            )}
+          </div>
+          {proximoNivel ? (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: MUTED, marginBottom: 6 }}>
+                <span>Evolução</span><span>{planoAtual.producaoTotal} / {proximoNivel.min} Placas</span>
+              </div>
+              <div style={{ height: 10, background: SURFACE_ALT, borderRadius: 999, overflow: "hidden" }}>
+                <div style={{ width: `${evolucaoPct}%`, height: "100%", background: RED }} />
+              </div>
+              <div style={{ fontSize: 13, marginTop: 8 }}>Faltam <b>{faltamProximoNivel}</b> placas para atingir o próximo nível.</div>
+            </>
+          ) : (
+            <div style={{ fontSize: 13, color: MUTED }}>Nível máximo do Plano de Carreira já atingido.</div>
+          )}
+        </div>
+
+        <SectionCard title="Alertas inteligentes">
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {alertas.map((a, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: SURFACE_ALT, borderRadius: 8, fontSize: 13 }}>
+                <Badge text={a.tone === "red" ? "Ação" : a.tone === "amber" ? "Atenção" : a.tone === "green" ? "Hoje" : "Info"} tone={a.tone} />
+                <span>{a.texto}</span>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Tarefas do dia">
+          {tarefasHoje.length === 0 ? (
+            <div style={{ color: MUTED, fontSize: 13, padding: "10px 0" }}>Nenhuma tarefa de pós-venda para hoje.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {tarefasHoje.map((l, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: SURFACE_ALT, borderRadius: 8, fontSize: 13 }}>
+                  <Clock size={14} color={RED} style={{ flexShrink: 0 }} />
+                  <span>{l.texto}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      <div className="grid-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <SectionCard title="Receita mensal" subtitle={insightReceita}>
+          <ChartOrEmpty data={series}>
+            <BarChart data={series}>
+              <CartesianGrid stroke="#26272C" vertical={false} />
+              <XAxis dataKey="mes" tick={{ fontSize: 11, fill: MUTED }} axisLine={{ stroke: SILVER }} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: MUTED }} axisLine={false} tickLine={false} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
+              <Tooltip formatter={(v) => formatBRL(v)} contentStyle={{ borderRadius: 8, border: `1px solid ${SILVER}`, fontSize: 13, background: SURFACE }} />
+              <Bar dataKey="receita" fill={RED} radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ChartOrEmpty>
+        </SectionCard>
+
+        <SectionCard title="Vendas por mês" subtitle={insightVendas}>
+          <ChartOrEmpty data={series}>
+            <BarChart data={series}>
+              <CartesianGrid stroke="#26272C" vertical={false} />
+              <XAxis dataKey="mes" tick={{ fontSize: 11, fill: MUTED }} axisLine={{ stroke: SILVER }} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: MUTED }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ borderRadius: 8, border: `1px solid ${SILVER}`, fontSize: 13, background: SURFACE }} />
+              <Bar dataKey="vendasQtd" fill="#5B8DEF" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ChartOrEmpty>
+        </SectionCard>
+
+        <SectionCard title="Evolução da consultoria" subtitle={insightConsultoria}>
+          <ChartOrEmpty data={series}>
+            <LineChart data={series}>
+              <CartesianGrid stroke="#26272C" vertical={false} />
+              <XAxis dataKey="mes" tick={{ fontSize: 11, fill: MUTED }} axisLine={{ stroke: SILVER }} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: MUTED }} axisLine={false} tickLine={false} tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
+              <Tooltip formatter={(v) => formatBRL(v)} contentStyle={{ borderRadius: 8, border: `1px solid ${SILVER}`, fontSize: 13, background: SURFACE }} />
+              <Line type="monotone" dataKey="consultoria" stroke={GREEN} strokeWidth={2.5} dot={false} />
+            </LineChart>
+          </ChartOrEmpty>
+        </SectionCard>
+
+        <SectionCard title="Evolução da carteira" subtitle={insightCarteira}>
+          <ChartOrEmpty data={carteiraPorMes}>
+            <LineChart data={carteiraPorMes}>
+              <CartesianGrid stroke="#26272C" vertical={false} />
+              <XAxis dataKey="mes" tick={{ fontSize: 11, fill: MUTED }} axisLine={{ stroke: SILVER }} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: MUTED }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ borderRadius: 8, border: `1px solid ${SILVER}`, fontSize: 13, background: SURFACE }} />
+              <Legend wrapperStyle={{ fontSize: 12, color: MUTED }} />
+              <Line type="monotone" dataKey="totalVendas" name="Total de vendas" stroke="#5B8DEF" strokeWidth={2.5} dot={false} />
+              <Line type="monotone" dataKey="placasAtivas" name="Placas ativas" stroke={RED} strokeWidth={2.5} dot={false} />
+            </LineChart>
+          </ChartOrEmpty>
+        </SectionCard>
+
+        <SectionCard title="Produção pessoal x equipe" subtitle={insightProducao}>
+          <ChartOrEmpty data={series}>
+            <BarChart data={series}>
+              <CartesianGrid stroke="#26272C" vertical={false} />
+              <XAxis dataKey="mes" tick={{ fontSize: 11, fill: MUTED }} axisLine={{ stroke: SILVER }} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: MUTED }} axisLine={false} tickLine={false} />
+              <Tooltip contentStyle={{ borderRadius: 8, border: `1px solid ${SILVER}`, fontSize: 13, background: SURFACE }} />
+              <Legend wrapperStyle={{ fontSize: 12, color: MUTED }} />
+              <Bar dataKey="producaoPessoal" name="Pessoal" fill={RED} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="producaoEquipe" name="Equipe" fill="#5B8DEF" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ChartOrEmpty>
+        </SectionCard>
+
+        <SectionCard title="Vendas por origem" subtitle={insightOrigem}>
+          <ChartOrEmpty data={vendasPorOrigem}>
+            <PieChart>
+              <Pie data={vendasPorOrigem} dataKey="value" nameKey="name" innerRadius={45} outerRadius={80} paddingAngle={2}>
+                {vendasPorOrigem.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+              </Pie>
+              <Tooltip contentStyle={{ borderRadius: 8, border: `1px solid ${SILVER}`, fontSize: 13, background: SURFACE }} />
+              <Legend wrapperStyle={{ fontSize: 12, color: MUTED }} />
+            </PieChart>
+          </ChartOrEmpty>
+        </SectionCard>
+      </div>
+    </div>
+  );
+}
+
+function ChartOrEmpty({ data, children }) {
+  if (!data || data.length === 0) {
+    return <div style={{ color: MUTED, fontSize: 13, padding: "40px 0", textAlign: "center" }}>Sem dados suficientes ainda.</div>;
+  }
+  return <div style={{ width: "100%", height: 240 }}><ResponsiveContainer>{children}</ResponsiveContainer></div>;
+}
+
+/* =================================================================
+   CARTEIRA DE ASSOCIADOS
+================================================================= */
+function Carteira({ associados, vendas, onNew, onEdit, onDelete, onOpen }) {
+  const [search, setSearch] = useState("");
+  const [origemFilter, setOrigemFilter] = useState("");
+
+  const filtered = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return associados
+      .filter((a) => !origemFilter || a.origem === origemFilter)
+      .filter((a) => !s || [a.nomeCompleto, a.cpf, a.telefone, a.email].some((v) => (v || "").toLowerCase().includes(s)))
+      .sort((a, b) => (a.nomeCompleto || "").localeCompare(b.nomeCompleto || ""));
+  }, [associados, search, origemFilter]);
+
+  const placasCount = (id) => vendas.filter((v) => v.associadoId === id).length;
+
+  const columns = [
+    {
+      key: "associado", label: "Associado", render: (r) => (
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 13.5 }}>{r.nomeCompleto}</div>
+          <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{r.cpf || "—"}</div>
+        </div>
+      ),
+    },
+    {
+      key: "contato", label: "Contato", render: (r) => (
+        <div>
+          <div style={{ fontSize: 13 }}>{r.telefone || "—"}</div>
+          <div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{r.email || "—"}</div>
+        </div>
+      ),
+    },
+    { key: "origem", label: "Origem", render: (r) => r.origem || "—" },
+    { key: "dataNascimento", label: "Aniversário", render: (r) => formatDateBR(r.dataNascimento) },
+    { key: "placas", label: "Placas", render: (r) => <Badge text={`${placasCount(r.id)} placa${placasCount(r.id) === 1 ? "" : "s"}`} tone={placasCount(r.id) > 0 ? "green" : "gray"} /> },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 10, flex: 1 }}>
+          <div style={{ position: "relative", flex: 1, minWidth: 220, maxWidth: 340 }}>
+            <Search size={15} style={{ position: "absolute", left: 12, top: 11, color: MUTED }} />
+            <TextInput placeholder="Nome, CPF, telefone, e-mail…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 34 }} />
+          </div>
+          <Select options={ORIGEM_OPTS} value={origemFilter} onChange={(e) => setOrigemFilter(e.target.value)} style={{ maxWidth: 170 }} />
+        </div>
+        <button style={btnPrimary} onClick={onNew}><Plus size={15} /> Novo associado</button>
+      </div>
+      <DataTable columns={columns} rows={filtered} onEdit={onEdit} onDelete={onDelete} onRowClick={onOpen} emptyText="Nenhum associado encontrado." />
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------
+   FICHA COMPLETA DO ASSOCIADO
+--------------------------------------------------------------- */
+function FichaAssociado({ associado, vendas, indicacoes, associadoNome, onBack, onSave, onNovaVenda, onEditVenda }) {
+  const [novaNota, setNovaNota] = useState("");
+
+  if (!associado) {
+    return (
+      <div>
+        <button onClick={onBack} style={btnGhost}><ArrowLeft size={15} /> Voltar</button>
+        <div style={{ marginTop: 20, color: MUTED }}>Associado não encontrado.</div>
+      </div>
+    );
+  }
+
+  const contatos = associado.contatos || [];
+  const documentos = associado.documentos || [];
+  const indicacoesFeitas = indicacoes.filter((i) => i.indicadorId === associado.id);
+  const quemIndicou = indicacoes.find((i) => i.indicadoId === associado.id);
+  const vendasLigadas = [...vendas].sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+  const placasAtivas = vendas.filter((v) => v.status === "Ativa").length;
+
+  const timeline = [
+    ...vendasLigadas.map((v) => ({ data: v.data, texto: `Venda registrada — placa ${v.veiculoPlaca || "—"} (${v.plano || "—"})` })),
+    ...vendasLigadas.map((v) => ({ data: getPrimeiroBoleto(v), texto: `1º boleto da placa ${v.veiculoPlaca || "—"}` })),
+    ...contatos.map((c) => ({ data: c.data, texto: `Contato: ${c.nota}` })),
+    ...indicacoesFeitas.map((i) => ({ data: i.data, texto: `Indicou ${nomeDoIndicado(i, associadoNome)}` })),
+  ].filter((t) => t.data).sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+
+  const addContato = () => {
+    if (!novaNota.trim()) return;
+    onSave({ ...associado, contatos: [{ data: new Date().toISOString().slice(0, 10), nota: novaNota }, ...contatos] });
+    setNovaNota("");
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <button onClick={onBack} style={btnGhost}><ArrowLeft size={15} /> Voltar à carteira</button>
+        <Badge text={`${placasAtivas} placa${placasAtivas === 1 ? "" : "s"} ativa${placasAtivas === 1 ? "" : "s"}`} tone={placasAtivas > 0 ? "green" : "gray"} />
+      </div>
+
+      <div style={{ background: SURFACE, borderRadius: 12, border: `1px solid ${SILVER}`, padding: 22 }}>
+        <h2 style={{ margin: "0 0 4px", fontSize: 21, fontWeight: 800 }}>{associado.nomeCompleto}</h2>
+        <div style={{ color: MUTED, fontSize: 13 }}>{vendas.length} placa{vendas.length === 1 ? "" : "s"} no total · {placasAtivas} ativa{placasAtivas === 1 ? "" : "s"}{quemIndicou ? ` · Indicado por ${associadoNome(quemIndicou.indicadorId)}` : ""}</div>
+      </div>
+
+      <SectionCard title="Dados pessoais">
+        <InfoRows rows={[
+          ["Telefone", associado.telefone], ["E-mail", associado.email], ["CPF", associado.cpf],
+          ["Origem", associado.origem], ["Data de nascimento", formatDateBR(associado.dataNascimento)],
+        ]} />
+      </SectionCard>
+
+      <SectionCard title="Placas / vendas vinculadas" right={<button onClick={onNovaVenda} style={btnGhost}><Plus size={14} /> Nova venda</button>}>
+        {vendasLigadas.length === 0 ? <EmptyNote text="Nenhuma placa vendida para este associado ainda." /> : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {vendasLigadas.map((v) => (
+              <div key={v.id} onClick={() => onEditVenda(v)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: ICE, borderRadius: 8, fontSize: 13, cursor: "pointer" }}>
+                <div>
+                  <div style={{ fontWeight: 700 }}>{v.veiculoModelo || "Veículo"} · {v.veiculoPlaca || "—"}</div>
+                  <div style={{ color: MUTED, fontSize: 11.5 }}>{formatDateBR(v.data)} · Plano {v.plano || "—"} · Adesão {formatBRL(toNumber(v.valorAdesao))}</div>
+                </div>
+                <Badge text={v.status || "—"} tone={statusTone(v.status)} />
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Indicações realizadas">
+        {indicacoesFeitas.length === 0 ? <EmptyNote text="Este associado ainda não indicou ninguém." /> : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {indicacoesFeitas.map((i) => (
+              <div key={i.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", background: ICE, borderRadius: 8, fontSize: 13 }}>
+                <span>{nomeDoIndicado(i, associadoNome)}</span><span>{formatDateBR(i.data)}</span><Badge text={i.status} tone={statusTone(i.status)} />
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Documentos do associado">
+        <DocumentosField
+          label="Documentos pessoais (independem da quantidade de veículos)"
+          tipos={["CNH", "Comprovante de residência", "CPF", "Documento de identidade", "Outros"]}
+          value={documentos}
+          onChange={(v) => onSave({ ...associado, documentos: v })}
+        />
+      </SectionCard>
+
+      <SectionCard title="Histórico de contatos">
+        <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+          <TextInput placeholder="Registrar novo contato ou observação…" value={novaNota} onChange={(e) => setNovaNota(e.target.value)} />
+          <button onClick={addContato} style={btnGhost}><Plus size={14} /> Registrar</button>
+        </div>
+        {contatos.length === 0 ? <EmptyNote text="Nenhum contato registrado." /> : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {contatos.map((c, i) => <div key={i} style={{ fontSize: 13 }}>{formatDateBR(c.data)} — {c.nota}</div>)}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Linha do tempo">
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {timeline.map((t, i) => (
+            <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <Clock size={13} color={RED} style={{ marginTop: 3, flexShrink: 0 }} />
+              <div style={{ fontSize: 13 }}><b>{formatDateBR(t.data)}</b> — {t.texto}</div>
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+
+      {associado.observacoes && (
+        <SectionCard title="Observações"><div style={{ fontSize: 13.5, whiteSpace: "pre-wrap" }}>{associado.observacoes}</div></SectionCard>
+      )}
+    </div>
+  );
+}
+function InfoRows({ rows }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+      {rows.map(([label, value], i) => (
+        <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+          <span style={{ color: MUTED }}>{label}</span><span style={{ fontWeight: 700 }}>{value || "—"}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+function EmptyNote({ text }) { return <div style={{ color: MUTED, fontSize: 13, padding: "10px 0" }}>{text}</div>; }
+
+/* =================================================================
+   FINANCEIRO
+================================================================= */
+function Financeiro({ vendas, producaoEquipe, indicacoes, config, consultores, despesas, metrics, onNewDespesa, onEditDespesa, onDeleteDespesa }) {
+  const [mes, setMes] = useState(currentMonth());
+  const fin = useMemo(() => computeFinanceiroMes(vendas, producaoEquipe, indicacoes, config, mes, consultores), [vendas, producaoEquipe, indicacoes, config, mes, consultores]);
+  const despesaMes = despesas.find((d) => d.competencia === mes);
+  const saldoFinal = fin.totalPrevisto - toNumber(despesaMes?.despesas) + toNumber(despesaMes?.outrasReceitas);
+
+  const despesasOrdenadas = [...despesas].sort((a, b) => (b.competencia || "").localeCompare(a.competencia || ""));
+  const columnsDespesas = [
+    { key: "competencia", label: "Competência", render: (r) => <b>{monthLabel(r.competencia)}</b> },
+    { key: "despesas", label: "Despesas", render: (r) => formatBRL(toNumber(r.despesas)) },
+    { key: "outrasReceitas", label: "Outras receitas", render: (r) => formatBRL(toNumber(r.outrasReceitas)) },
+    { key: "observacoes", label: "Observações" },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ fontSize: 12.5, color: MUTED }}>Tudo calculado automaticamente a partir de Vendas, Equipe e Indicações — nenhum lançamento manual necessário.</div>
+        <Field label="Competência"><TextInput type="month" value={mes} onChange={(e) => setMes(e.target.value)} /></Field>
+      </div>
+
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+        <div className="ancore-card" style={{ background: SURFACE, borderRadius: CARD_RADIUS, padding: "16px 18px", flex: 2, minWidth: 280, border: `1px solid ${RED}`, boxShadow: `${CARD_SHADOW}, 0 0 24px rgba(219,57,55,0.25)` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: MUTED, marginBottom: 8 }}>
+            <CircleDollarSign size={15} /><span style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Total previsto do mês</span>
+          </div>
+          <div style={{ fontSize: 23, fontWeight: 800, color: TEXT, marginBottom: 10 }}>{formatBRL(fin.totalPrevisto)}</div>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: MUTED, marginBottom: 6 }}>Composição</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 12.5 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: MUTED }}>Adesões</span><span>{formatBRL(fin.adesoesMes)}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: MUTED }}>Premiações</span><span>{formatBRL(fin.premiacaoMensal + fin.premiacaoSemanal)}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: MUTED }}>Consultoria</span><span>{formatBRL(fin.consultoriaPrevista)}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: MUTED }}>Plano de carreira</span><span>{formatBRL(fin.planoDeCarreiraPrevisto)}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: MUTED }}>Recorrência</span><span>{formatBRL(fin.recorrenciaPrevista)}</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: MUTED }}>Indicações</span><span>-{formatBRL(fin.indicacoesPagas)}</span></div>
+          </div>
+        </div>
+        <KpiCard icon={ShoppingCart} label="Adesões do mês" value={formatBRL(fin.adesoesMes)} sub={`${fin.totalAdesoesQtd} adesões`} />
+        <div style={{ background: SURFACE, borderRadius: 12, padding: "16px 18px", flex: 1, minWidth: 220, border: `1px solid ${SILVER}`, borderTop: `3px solid ${RED}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: MUTED, marginBottom: 8 }}>
+            <Wallet size={15} /><span style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Ticket médio</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+            <span style={{ color: MUTED }}>Do mês</span><b style={{ color: TEXT }}>{formatBRL(fin.ticketMedio)}</b>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+            <span style={{ color: MUTED }}>Geral</span><b style={{ color: TEXT }}>{formatBRL(metrics.ticketMedioGeral)}</b>
+          </div>
+        </div>
+        <div style={{ background: SURFACE, borderRadius: 12, padding: "16px 18px", flex: 1, minWidth: 220, border: `1px solid ${SILVER}`, borderTop: `3px solid ${RED}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, color: MUTED, marginBottom: 8 }}>
+            <UserCog size={15} /><span style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Consultoria</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+            <span style={{ color: MUTED }}>Prevista</span><b style={{ color: TEXT }}>{formatBRL(fin.consultoriaPrevista)}</b>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+            <span style={{ color: MUTED }}>Ativas</span><b style={{ color: TEXT }}>{fin.consultoriasAtivasTotal}</b>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+            <span style={{ color: MUTED }}>Valor médio</span><b style={{ color: TEXT }}>{formatBRL(fin.consultoriasAtivasTotal ? fin.consultoriaPrevista / fin.consultoriasAtivasTotal : 0)}</b>
+          </div>
+        </div>
+        <KpiCard icon={Share2} label="Indicações pagas" value={formatBRL(fin.indicacoesPagas)} accent={AMBER} />
+      </div>
+
+
+      <SectionCard title="Premiações e receitas variáveis">
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13.5 }}>
+          <Linha label={`Premiação mensal (produção de ${monthLabel(fin.mesAnterior)}: ${fin.placasVendidasMesAnterior} placas)`} valor={fin.premiacaoMensal} />
+          <Linha label="Premiação semanal (mês anterior)" valor={fin.premiacaoSemanal} />
+          <Linha label="Consultoria prevista" valor={fin.consultoriaPrevista} badge={fin.consultoriaElegivel ? <Badge text="Elegível" tone="green" /> : <Badge text="Bloqueada" tone="red" />} />
+          <Linha label={`Plano de carreira (${fin.faixa.nivel})`} valor={fin.planoDeCarreiraPrevisto} badge={fin.faixa.premiacao > 0 && !fin.requisitoEquipeOk ? <Badge text="Bloqueada — equipe" tone="red" /> : undefined} />
+          <Linha label="Recorrência" valor={fin.recorrenciaPrevista} badge={fin.recorrenciaElegivel ? <Badge text="Elegível" tone="green" /> : <Badge text="Bloqueada" tone="red" />} />
+          <div style={{ borderTop: `1px solid ${SILVER}`, marginTop: 4, paddingTop: 8, display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 15 }}>
+            <span>Total Previsto (premiações e variáveis)</span>
+            <span style={{ color: RED_DARK }}>{formatBRL(fin.premiacaoMensal + fin.premiacaoSemanal + fin.consultoriaPrevista + fin.planoDeCarreiraPrevisto + fin.recorrenciaPrevista)}</span>
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title={`Calendário financeiro de ${monthLabel(mes)}`}>
+        <div className="grid-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          {Object.values(CALENDARIO).map((c) => (
+            <div key={c.label} style={{ padding: "10px 14px", background: SURFACE_ALT, borderRadius: 8, fontSize: 13 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>{c.label}</div>
+              <div style={{ color: MUTED, fontSize: 12 }}>NF até {formatDateBR(dataDoMes(mes, c.nf))} · Pagamento em {formatDateBR(dataDoMes(mes, c.pagamento))}</div>
+            </div>
+          ))}
+        </div>
+      </SectionCard>
+
+      {metrics.placasAtivas >= RECORRENCIA_BLOCO && !fin.recorrenciaElegivel && (
+        <div style={{ background: "rgba(240,180,41,0.12)", border: "1px solid rgba(240,180,41,0.35)", borderRadius: 10, padding: "12px 16px", fontSize: 13, display: "flex", gap: 10, alignItems: "flex-start" }}>
+          <Lock size={16} color={AMBER} style={{ marginTop: 1, flexShrink: 0 }} />
+          <div>Recorrência bloqueada em {monthLabel(mes)}: foram {fin.placasVendidasMesAnterior} vendas pessoais em {monthLabel(fin.mesAnterior)}, e o mínimo exigido é {RECORRENCIA_VENDAS_MINIMAS_MES}.</div>
+        </div>
+      )}
+      {fin.faixa.premiacao > 0 && !fin.requisitoEquipeOk && (
+        <div style={{ background: "rgba(240,180,41,0.12)", border: "1px solid rgba(240,180,41,0.35)", borderRadius: 10, padding: "12px 16px", fontSize: 13, display: "flex", gap: 10, alignItems: "flex-start" }}>
+          <Lock size={16} color={AMBER} style={{ marginTop: 1, flexShrink: 0 }} />
+          <div>Premiação do Plano de Carreira ({fin.faixa.nivel}) bloqueada: os 2 consultores selecionados na aba Equipe precisam de {EQUIPE_VENDAS_MIN_POR_PESSOA}+ vendas cada em {monthLabel(fin.mesAnterior)} — hoje {fin.elegiveisEquipe} de 2 cumprem o requisito.</div>
+        </div>
+      )}
+
+      <SectionCard title="Despesas e outras receitas (único lançamento manual)" right={<button style={btnGhost} onClick={onNewDespesa}><Plus size={14} /> Lançar mês</button>}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14, fontSize: 13.5 }}>
+          <span style={{ color: MUTED }}>Saldo final estimado de {monthLabel(mes)} (previsto − despesas + outras receitas)</span>
+          <b style={{ color: saldoFinal >= 0 ? GREEN : RED_DARK }}>{formatBRL(saldoFinal)}</b>
+        </div>
+        <DataTable columns={columnsDespesas} rows={despesasOrdenadas} onEdit={onEditDespesa} onDelete={onDeleteDespesa} emptyText="Nenhuma despesa lançada." />
+      </SectionCard>
+    </div>
+  );
+}
+function Linha({ label, valor, badge }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+      <span style={{ color: MUTED, display: "flex", alignItems: "center", gap: 8 }}>{label} {badge}</span>
+      <b>{formatBRL(valor)}</b>
+    </div>
+  );
+}
+
+/* =================================================================
+   VENDAS
+================================================================= */
+function Vendas({ vendas, associados, metrics, associadoNome, onNew, onEdit, onDelete, onOpenAssociado }) {
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [showFiltros, setShowFiltros] = useState(false);
+  const [origemFilter, setOrigemFilter] = useState("");
+  const [planoFilter, setPlanoFilter] = useState("");
+  const [periodoInicio, setPeriodoInicio] = useState("");
+  const [periodoFim, setPeriodoFim] = useState("");
+
+  const associadoOrigem = (id) => associados.find((a) => a.id === id)?.origem || "";
+
+  const filtered = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    return vendas
+      .filter((v) => !statusFilter || v.status === statusFilter)
+      .filter((v) => !origemFilter || associadoOrigem(v.associadoId) === origemFilter)
+      .filter((v) => !planoFilter || v.plano === planoFilter)
+      .filter((v) => !periodoInicio || (v.data || "") >= periodoInicio)
+      .filter((v) => !periodoFim || (v.data || "") <= periodoFim)
+      .filter((v) => !s || [associadoNome(v.associadoId), v.veiculoPlaca, v.veiculoModelo, v.plano].some((x) => (x || "").toLowerCase().includes(s)))
+      .sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendas, associados, search, statusFilter, origemFilter, planoFilter, periodoInicio, periodoFim]);
+
+  const columns = [
+    { key: "data", label: "Data", render: (r) => formatDateBR(r.data) },
+    {
+      key: "associado", label: "Associado", render: (r) => (
+        <button onClick={(e) => { e.stopPropagation(); onOpenAssociado(r.associadoId); }} style={{ background: "none", border: "none", padding: 0, color: RED_DARK, fontWeight: 700, cursor: "pointer", textDecoration: "underline", fontSize: 13 }}>
+          {associadoNome(r.associadoId)}
+        </button>
+      ),
+    },
+    {
+      key: "veiculo", label: "Veículo", render: (r) => (
+        <div><div>{r.veiculoModelo || "—"}</div><div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{r.veiculoPlaca || "—"}</div></div>
+      ),
+    },
+    { key: "plano", label: "Plano" },
+    { key: "valorAdesao", label: "Adesão", render: (r) => formatBRL(toNumber(r.valorAdesao)) },
+    { key: "consultoria", label: "Consultoria", render: (r) => formatBRL(toNumber(r.consultoria)) },
+    {
+      key: "mensalidade", label: "Mensalidade", render: (r) => (
+        <div><div>{formatBRL(toNumber(r.primeiraMensalidade))}</div><div style={{ fontSize: 11.5, color: MUTED, marginTop: 2 }}>{formatDateBR(getPrimeiroBoleto(r))}</div></div>
+      ),
+    },
+    { key: "status", label: "Status", render: (r) => <Badge text={r.status || "—"} tone={statusTone(r.status)} /> },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+        <KpiCard icon={CarFront} label="Total de placas vendidas" value={metrics.totalPlacasVendidas} />
+        <KpiCard icon={CheckCircle2} label="Total de placas ativas" value={metrics.placasAtivas} accent={RED_DARK} />
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 10, flex: 1, flexWrap: "wrap" }}>
+          <div style={{ position: "relative", flex: 1, minWidth: 220, maxWidth: 320 }}>
+            <Search size={15} style={{ position: "absolute", left: 12, top: 11, color: "#9AA0A6" }} />
+            <TextInput placeholder="Associado, placa, modelo, plano…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ paddingLeft: 34 }} />
+          </div>
+          <Select options={VENDA_STATUS_OPTS} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ maxWidth: 180 }} />
+          <button onClick={() => setShowFiltros((s) => !s)} style={btnGhost}><Filter size={14} /> Filtros avançados</button>
+        </div>
+        <button style={btnPrimary} onClick={onNew}><Plus size={15} /> Nova venda</button>
+      </div>
+
+      {showFiltros && (
+        <div className="grid-3col" style={{ background: SURFACE, borderRadius: 12, border: `1px solid ${SILVER}`, padding: 16, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+          <Field label="Origem"><Select options={ORIGEM_OPTS} value={origemFilter} onChange={(e) => setOrigemFilter(e.target.value)} /></Field>
+          <Field label="Plano"><Select options={PLANO_OPTS} value={planoFilter} onChange={(e) => setPlanoFilter(e.target.value)} /></Field>
+          <Field label="Data de"><TextInput type="date" value={periodoInicio} onChange={(e) => setPeriodoInicio(e.target.value)} /></Field>
+          <Field label="Data até"><TextInput type="date" value={periodoFim} onChange={(e) => setPeriodoFim(e.target.value)} /></Field>
+        </div>
+      )}
+
+      <div style={{ maxHeight: "70vh", overflowY: "auto", borderRadius: 12 }}>
+        <DataTable columns={columns} rows={filtered} onEdit={onEdit} onDelete={onDelete} emptyText="Nenhuma venda encontrada." sortable />
+      </div>
+    </div>
+  );
+}
+
+
+/* =================================================================
+   METAS
+================================================================= */
+function IndicacaoModal({ initial, associadoOptions, onSave, onCancel }) {
+  const [data, setData] = useState(initial || {});
+  const [modoManual, setModoManual] = useState(!initial?.indicadorId && !initial?.id ? false : !!(initial && !initial.indicadoId && (initial.indicadoNomeManual)));
+  const set = (k) => (e) => setData((s) => ({ ...s, [k]: e.target.value }));
+
+  return (
+    <Modal title={data.id ? "Editar indicação" : "Nova indicação"} onClose={onCancel} wide>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <Field label="Associado que indicou">
+          <LookupSelect options={associadoOptions} value={data.indicadorId} onChange={(v) => setData((s) => ({ ...s, indicadorId: v }))} />
+        </Field>
+
+        <div>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: MUTED, display: "block", marginBottom: 8 }}>Novo associado indicado</span>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <button onClick={() => setModoManual(false)} style={!modoManual ? btnPrimary : btnGhost}>Associado cadastrado</button>
+            <button onClick={() => setModoManual(true)} style={modoManual ? btnPrimary : btnGhost}>Cadastro manual</button>
+          </div>
+          {!modoManual ? (
+            <LookupSelect options={associadoOptions} value={data.indicadoId} onChange={(v) => setData((s) => ({ ...s, indicadoId: v }))} />
+          ) : (
+            <div className="grid-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <Field label="Nome do indicado" span={2}><TextInput value={data.indicadoNomeManual || ""} onChange={set("indicadoNomeManual")} /></Field>
+              <Field label="Telefone (opcional)"><TextInput value={data.indicadoTelefoneManual || ""} onChange={set("indicadoTelefoneManual")} /></Field>
+              <Field label="Observações (opcional)" span={2}><TextArea rows={2} value={data.indicadoObservacoesManual || ""} onChange={set("indicadoObservacoesManual")} /></Field>
+              {initial?.indicadoNomeManual && (
+                <div style={{ fontSize: 12, color: MUTED, gridColumn: "span 2" }}>Assim que esse indicado for cadastrado na Carteira, volte aqui e troque para "Associado cadastrado" para vincular — o histórico desta indicação é preservado.</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="grid-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <Field label="Data da indicação"><TextInput type="date" value={data.data || ""} onChange={set("data")} /></Field>
+          <Field label="Valor da comissão (R$)"><TextInput type="number" step="0.01" value={data.valorComissao || ""} onChange={set("valorComissao")} /></Field>
+          <Field label="Status"><Select options={INDIC_STATUS_OPTS} value={data.status || ""} onChange={set("status")} /></Field>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button onClick={onCancel} style={btnGhost}>Cancelar</button>
+          <button
+            onClick={() => (data.indicadorId && (modoManual ? (data.indicadoNomeManual || "").trim() : data.indicadoId)) && onSave(modoManual ? { ...data, indicadoId: "" } : { ...data, indicadoNomeManual: "", indicadoTelefoneManual: "", indicadoObservacoesManual: "" })}
+            style={btnPrimary}
+          ><Save size={15} /> Salvar</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function MetaModal({ initial, onSave, onCancel }) {
+  const [data, setData] = useState(initial || { tipo: "mensal", periodo: currentMonth() });
+  const set = (k) => (e) => setData((s) => ({ ...s, [k]: e.target.value }));
+  return (
+    <Modal title={data.id ? "Editar meta" : "Nova meta"} onClose={onCancel}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <div className="grid-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+          <Field label="Tipo"><Select options={["mensal", "anual"]} value={data.tipo} onChange={set("tipo")} /></Field>
+          <Field label="Período">
+            <TextInput type={data.tipo === "anual" ? "number" : "month"} placeholder={data.tipo === "anual" ? "2026" : undefined} value={data.periodo || ""} onChange={set("periodo")} />
+          </Field>
+          <Field label="Meta financeira (R$)"><TextInput type="number" value={data.metaFinanceira || ""} onChange={set("metaFinanceira")} /></Field>
+          <Field label="Meta de vendas"><TextInput type="number" value={data.metaVendas || ""} onChange={set("metaVendas")} /></Field>
+          <Field label="Meta de placas"><TextInput type="number" value={data.metaPlacas || ""} onChange={set("metaPlacas")} /></Field>
+          <Field label="Meta de recorrência (R$)"><TextInput type="number" value={data.metaRecorrencia || ""} onChange={set("metaRecorrencia")} /></Field>
+          <Field label="Meta de consultoria (R$)"><TextInput type="number" value={data.metaConsultoria || ""} onChange={set("metaConsultoria")} /></Field>
+          <Field label="Meta de adesão (R$)"><TextInput type="number" value={data.metaAdesao || ""} onChange={set("metaAdesao")} /></Field>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          <button onClick={onCancel} style={btnGhost}>Cancelar</button>
+          <button onClick={() => data.periodo && onSave(data)} style={btnPrimary}><Save size={15} /> Salvar meta</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function Metas({ metas, vendas, producaoEquipe, indicacoes, config, consultores, metrics, onNew, onEdit, onDelete }) {
+  const sorted = [...metas].sort((a, b) => (b.periodo || "").localeCompare(a.periodo || ""));
+  const columns = [
+    { key: "periodo", label: "Período", render: (r) => <b>{r.tipo === "mensal" ? monthLabel(r.periodo) : r.periodo}</b> },
+    { key: "tipo", label: "Tipo" },
+    { key: "metaFinanceira", label: "Meta financeira", render: (r) => formatBRL(toNumber(r.metaFinanceira)) },
+    { key: "metaVendas", label: "Meta de vendas" },
+    { key: "metaPlacas", label: "Meta de placas" },
+    {
+      key: "progresso", label: "Progresso", render: (r) => {
+        if (r.tipo !== "mensal") return "—";
+        const fin = computeFinanceiroMes(vendas, producaoEquipe, indicacoes, config, r.periodo, consultores);
+        const pct = toNumber(r.metaFinanceira) ? (fin.totalPrevisto / toNumber(r.metaFinanceira)) * 100 : 0;
+        return `${pct.toFixed(0)}%`;
+      },
+    },
+  ];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button style={btnPrimary} onClick={onNew}><Plus size={15} /> Nova meta</button>
+      </div>
+      <DataTable columns={columns} rows={sorted} onEdit={onEdit} onDelete={onDelete} emptyText="Nenhuma meta cadastrada." />
+    </div>
+  );
+}
+
+/* =================================================================
+   RECORRÊNCIA
+================================================================= */
+function Recorrencia({ vendas, producaoEquipe, indicacoes, config, consultores, associadoNome, metrics }) {
+  const [mes, setMes] = useState(currentMonth());
+  const fin = useMemo(() => computeFinanceiroMes(vendas, producaoEquipe, indicacoes, config, mes, consultores), [vendas, producaoEquipe, indicacoes, config, mes, consultores]);
+  const ativas = vendas.filter((v) => v.status === "Ativa");
+  const columns = [
+    { key: "associado", label: "Associado", render: (r) => <b>{associadoNome(r.associadoId)}</b> },
+    { key: "veiculoPlaca", label: "Placa" },
+    { key: "status", label: "Status", render: (r) => <Badge text={r.status} tone={statusTone(r.status)} /> },
+    { key: "primeiroBoleto", label: "Próximo boleto", render: (r) => formatDateBR(getPrimeiroBoleto(r)) },
+    { key: "data", label: "Tempo de carteira", render: (r) => `${monthsBetween(r.data)} meses` },
+  ];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+          <KpiCard icon={Repeat} label="Recorrência prevista" value={formatBRL(fin.recorrenciaPrevista)} />
+          <KpiCard icon={CarFront} label="Placas ativas" value={metrics.placasAtivas} accent={RED_DARK} />
+          <KpiCard icon={AlertTriangle} label="Cancelamentos" value={metrics.cancelados} accent={AMBER} />
+        </div>
+        <Field label="Competência"><TextInput type="month" value={mes} onChange={(e) => setMes(e.target.value)} /></Field>
+      </div>
+
+      <SectionCard title="Elegibilidade de recorrência (regra Ancore)">
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, fontSize: 13.5 }}>
+          <div>Vendas pessoais em {monthLabel(fin.mesAnterior)}: <b>{fin.placasVendidasMesAnterior}</b> (mínimo exigido: {RECORRENCIA_VENDAS_MINIMAS_MES})</div>
+          <div>Placas ativas em {monthLabel(fin.mesAnterior)} (boletos pagos): <b>{fin.placasAtivasMesAnterior}</b> (a cada {RECORRENCIA_BLOCO} → {formatBRL(RECORRENCIA_VALOR_POR_BLOCO)})</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            Elegível em {monthLabel(mes)}: {fin.recorrenciaElegivel ? <Badge text="Sim" tone="green" /> : <Badge text="Não" tone="red" />}
+          </div>
+          <div>Valor previsto de recorrência: <b style={{ color: RED_DARK }}>{formatBRL(fin.recorrenciaPrevista)}</b> ({fin.recorrenciaBlocos} bloco{fin.recorrenciaBlocos === 1 ? "" : "s"} de {RECORRENCIA_BLOCO})</div>
+        </div>
+      </SectionCard>
+
+      <DataTable columns={columns} rows={ativas} emptyText="Nenhuma placa ativa no momento." />
+    </div>
+  );
+}
+
+/* =================================================================
+   ANIVERSARIANTES
+================================================================= */
+function Aniversariantes({ associados }) {
+  const [onlyWeek, setOnlyWeek] = useState(false);
+  const withBday = associados
+    .filter((a) => a.dataNascimento)
+    .map((a) => ({ ...a, _dias: daysUntilBirthday(a.dataNascimento) }))
+    .sort((a, b) => a._dias - b._dias)
+    .filter((a) => !onlyWeek || a._dias <= 7);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ fontSize: 13, color: MUTED }}>{withBday.length} aniversariante{withBday.length === 1 ? "" : "s"}</div>
+        <button onClick={() => setOnlyWeek((s) => !s)} style={onlyWeek ? btnPrimary : btnGhost}><Gift size={15} /> Só esta semana</button>
+      </div>
+      {withBday.length === 0 ? (
+        <div style={{ color: MUTED, fontSize: 13, padding: 30, textAlign: "center", background: SURFACE, borderRadius: 12, border: `1px solid ${SILVER}` }}>Nenhum aniversariante encontrado.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {withBday.map((a) => (
+            <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: SURFACE, border: `1px solid ${SILVER}`, borderRadius: 10, padding: "12px 16px" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>{a.nomeCompleto}</div>
+                <div style={{ fontSize: 12, color: MUTED }}>{formatDateBR(a.dataNascimento)} · faz {ageFromDate(a.dataNascimento) + 1} anos</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <Badge text={a._dias === 0 ? "Hoje!" : `em ${a._dias} dia${a._dias === 1 ? "" : "s"}`} tone={a._dias <= 7 ? "green" : "gray"} />
+                {a.telefone && (
+                  <a href={waLink(a.telefone)} target="_blank" rel="noreferrer" style={{ ...btnGhost, textDecoration: "none" }}>
+                    <MessageCircle size={14} /> WhatsApp
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* =================================================================
+   INDICAÇÕES
+================================================================= */
+function Indicacoes({ indicacoes, associadoNome, onNew, onEdit, onDelete }) {
+  const sorted = [...indicacoes].sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+  const columns = [
+    { key: "indicadorId", label: "Quem indicou", render: (r) => <b>{associadoNome(r.indicadorId)}</b> },
+    { key: "indicadoId", label: "Associado indicado", render: (r) => nomeDoIndicado(r, associadoNome) },
+    { key: "data", label: "Data", render: (r) => formatDateBR(r.data) },
+    { key: "valorComissao", label: "Valor da comissão", render: (r) => formatBRL(toNumber(r.valorComissao)) },
+    { key: "status", label: "Status", render: (r) => <Badge text={r.status} tone={statusTone(r.status)} /> },
+  ];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button style={btnPrimary} onClick={onNew}><Plus size={15} /> Nova indicação</button>
+      </div>
+      <DataTable columns={columns} rows={sorted} onEdit={onEdit} onDelete={onDelete} emptyText="Nenhuma indicação registrada." />
+    </div>
+  );
+}
+
+/* =================================================================
+   EQUIPE / PLANO DE CARREIRA
+================================================================= */
+function Equipe({ consultores, producao, consultorNome, onNewConsultor, onEditConsultor, onDeleteConsultor, onNewProducao, onEditProducao, onDeleteProducao, onToggleSelecionado }) {
+  const cm = currentMonth();
+  const producaoMes = producao.filter((p) => p.competencia === cm);
+  const consultoresAtivos = consultores.filter((c) => c.status === "Ativo");
+  const totalPlacasEquipe = producaoMes.reduce((s, p) => s + toNumber(p.placasVendidas), 0);
+  const mediaPorConsultor = consultoresAtivos.length ? totalPlacasEquipe / consultoresAtivos.length : 0;
+  const selecionadosCount = consultores.filter((c) => c.selecionadoPlanoCarreira).length;
+
+  const ranking = [...producaoMes].sort((a, b) => toNumber(b.placasVendidas) - toNumber(a.placasVendidas));
+
+  const abaixoDaMedia = producaoMes
+    .filter((p) => toNumber(p.placasVendidas) < mediaPorConsultor)
+    .map((p) => ({ ...p, _nome: consultorNome(p.consultorId) }))
+    .sort((a, b) => toNumber(a.placasVendidas) - toNumber(b.placasVendidas));
+
+  const columnsConsultores = [
+    {
+      key: "selecionadoPlanoCarreira", label: "Plano de carreira", render: (r) => (
+        <input
+          type="checkbox"
+          checked={!!r.selecionadoPlanoCarreira}
+          onChange={(e) => { e.stopPropagation(); onToggleSelecionado(r); }}
+          onClick={(e) => e.stopPropagation()}
+          style={{ width: 16, height: 16, cursor: "pointer" }}
+        />
+      ),
+    },
+    { key: "nome", label: "Nome", render: (r) => <b>{r.nome}</b> },
+    { key: "cargo", label: "Cargo" },
+    { key: "status", label: "Status", render: (r) => <Badge text={r.status} tone={statusTone(r.status)} /> },
+    { key: "dataEntrada", label: "Data de entrada", render: (r) => formatDateBR(r.dataEntrada) },
+    { key: "telefone", label: "Telefone" },
+  ];
+  const columnsProducao = [
+    { key: "competencia", label: "Competência", render: (r) => <b>{monthLabel(r.competencia)}</b> },
+    { key: "consultor", label: "Consultor", render: (r) => consultorNome(r.consultorId) },
+    { key: "placasVendidas", label: "Placas vendidas" },
+    { key: "placasAtivas", label: "Placas ativas" },
+    { key: "elegivel", label: "Elegível (≥3)", render: (r) => <Badge text={toNumber(r.placasVendidas) >= EQUIPE_VENDAS_MIN_POR_PESSOA ? "Sim" : "Não"} tone={toNumber(r.placasVendidas) >= EQUIPE_VENDAS_MIN_POR_PESSOA ? "green" : "amber"} /> },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+        <KpiCard icon={UserCog} label="Consultores ativos" value={consultoresAtivos.length} />
+        <KpiCard icon={CarFront} label="Placas da equipe (mês)" value={totalPlacasEquipe} accent={RED_DARK} />
+        <KpiCard icon={TrendingUp} label="Média por consultor" value={mediaPorConsultor.toFixed(1)} />
+        <KpiCard icon={CheckCircle2} label="Selecionados p/ Plano de Carreira" value={`${selecionadosCount}/2`} accent={selecionadosCount === 2 ? GREEN : AMBER} />
+      </div>
+
+      <SectionCard title="Abaixo da média">
+        {abaixoDaMedia.length === 0 ? <EmptyNote text="Nenhum consultor abaixo da média da equipe este mês." /> : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {abaixoDaMedia.map((p) => (
+              <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: SURFACE_ALT, borderRadius: 8, fontSize: 13 }}>
+                <span><b>{p._nome}</b></span>
+                <span>{p.placasVendidas} venda(s) · média da equipe: {mediaPorConsultor.toFixed(1)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Consultores" right={<button style={btnGhost} onClick={onNewConsultor}><Plus size={14} /> Novo consultor</button>}>
+        <div style={{ fontSize: 12, color: MUTED, marginBottom: 10 }}>Marque exatamente 2 consultores para validar o requisito de equipe do Plano de Carreira.</div>
+        <DataTable columns={columnsConsultores} rows={consultores} onEdit={onEditConsultor} onDelete={onDeleteConsultor} emptyText="Nenhum consultor cadastrado." />
+      </SectionCard>
+
+      <SectionCard title="Ranking de produção do mês">
+        {ranking.length === 0 ? <EmptyNote text="Nenhuma produção lançada este mês." /> : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {ranking.map((p, i) => (
+              <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", background: ICE, borderRadius: 8, fontSize: 13 }}>
+                <span><b>#{i + 1}</b> {consultorNome(p.consultorId)}</span>
+                <span>{p.placasVendidas} placas</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      <SectionCard title="Produção mensal" right={<button style={btnGhost} onClick={onNewProducao}><Plus size={14} /> Lançar produção</button>}>
+        <DataTable columns={columnsProducao} rows={[...producao].sort((a, b) => (b.competencia || "").localeCompare(a.competencia || ""))} onEdit={onEditProducao} onDelete={onDeleteProducao} emptyText="Nenhuma produção lançada." />
+      </SectionCard>
+    </div>
+  );
+}
+
+
+function Relatorios({ associados, vendas, associadoNome }) {
+  const [filtros, setFiltros] = useState({ origem: "", plano: "", status: "", periodoInicio: "", periodoFim: "" });
+  const set = (k) => (e) => setFiltros((s) => ({ ...s, [k]: e.target.value }));
+
+  const associadoOrigem = (id) => associados.find((a) => a.id === id)?.origem || "";
+
+  const filtrados = vendas.filter((v) =>
+    (!filtros.origem || associadoOrigem(v.associadoId) === filtros.origem) &&
+    (!filtros.plano || v.plano === filtros.plano) &&
+    (!filtros.status || v.status === filtros.status) &&
+    (!filtros.periodoInicio || (v.data || "") >= filtros.periodoInicio) &&
+    (!filtros.periodoFim || (v.data || "") <= filtros.periodoFim)
+  );
+
+  const porPlano = {};
+  filtrados.forEach((v) => { const p = v.plano || "Sem plano"; porPlano[p] = (porPlano[p] || 0) + 1; });
+  const porOrigem = {};
+  filtrados.forEach((v) => { const o = associadoOrigem(v.associadoId) || "Sem origem"; porOrigem[o] = (porOrigem[o] || 0) + 1; });
+
+  const columns = [
+    { key: "data", label: "Data", render: (r) => formatDateBR(r.data) },
+    { key: "associado", label: "Associado", render: (r) => associadoNome(r.associadoId) },
+    { key: "veiculoPlaca", label: "Placa" },
+    { key: "plano", label: "Plano" },
+    { key: "origem", label: "Origem", render: (r) => associadoOrigem(r.associadoId) || "—" },
+    { key: "status", label: "Status", render: (r) => <Badge text={r.status} tone={statusTone(r.status)} /> },
+    { key: "valorAdesao", label: "Adesão", render: (r) => formatBRL(toNumber(r.valorAdesao)) },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <SectionCard title="Filtros">
+        <div className="grid-3col" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+          <Field label="Origem"><Select options={ORIGEM_OPTS} value={filtros.origem} onChange={set("origem")} /></Field>
+          <Field label="Plano"><Select options={PLANO_OPTS} value={filtros.plano} onChange={set("plano")} /></Field>
+          <Field label="Status"><Select options={VENDA_STATUS_OPTS} value={filtros.status} onChange={set("status")} /></Field>
+          <Field label="Contrato de"><TextInput type="date" value={filtros.periodoInicio} onChange={set("periodoInicio")} /></Field>
+          <Field label="Contrato até"><TextInput type="date" value={filtros.periodoFim} onChange={set("periodoFim")} /></Field>
+        </div>
+      </SectionCard>
+
+      <div className="grid-2col" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <SectionCard title="Ranking de planos">
+          {Object.keys(porPlano).length === 0 ? <EmptyNote text="Sem dados." /> : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {Object.entries(porPlano).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
+                <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span>{k}</span><b>{v}</b></div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+        <SectionCard title="Origem das vendas">
+          {Object.keys(porOrigem).length === 0 ? <EmptyNote text="Sem dados." /> : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {Object.entries(porOrigem).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
+                <div key={k} style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span>{k}</span><b>{v}</b></div>
+              ))}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      <SectionCard
+        title={`Carteira filtrada (${filtrados.length})`}
+        right={
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={btnGhost} onClick={() => exportXLSX(
+              filtrados.map((v) => ({ data: v.data, associado: associadoNome(v.associadoId), origem: associadoOrigem(v.associadoId), placa: v.veiculoPlaca, plano: v.plano, status: v.status, adesao: toNumber(v.valorAdesao), consultoria: toNumber(v.consultoria) })),
+              "ancore-relatorio-vendas.xlsx", "Vendas"
+            )}>
+              <Download size={14} /> Excel
+            </button>
+            <button style={btnGhost} onClick={() => window.print()}><Printer size={14} /> Imprimir / PDF</button>
+          </div>
+        }
+      >
+        <DataTable columns={columns} rows={filtrados} emptyText="Nenhum registro para os filtros selecionados." />
+      </SectionCard>
+    </div>
+  );
+}
+
+/* =================================================================
+   CONFIGURAÇÕES
+================================================================= */
+function Configuracoes({ config, setConfig }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <SectionCard title="Seu cargo atual">
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 14, alignItems: "end" }}>
+          <Field label="Cargo">
+            <Select options={CARGO_OPTS} value={config.meuCargo} onChange={(e) => setConfig({ ...config, meuCargo: e.target.value })} />
+          </Field>
+          <div style={{ fontSize: 12.5, color: MUTED }}>
+            Define o mínimo de vendas pessoais exigido para elegibilidade de consultoria: Gestores precisam de {EQUIPE_VENDAS_MIN_POR_PESSOA} vendas/mês; Consultores e Líderes precisam de 5.
+          </div>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Regras oficiais da Ancore (fixas)">
+        <div style={{ fontSize: 12.5, color: MUTED, marginBottom: 14 }}>Essas regras seguem a política oficial informada e não são editáveis pelo sistema.</div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Recorrência</div>
+            <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.7 }}>
+              A cada {RECORRENCIA_BLOCO} placas ativas (boletos pagos) no mês anterior → {formatBRL(RECORRENCIA_VALOR_POR_BLOCO)}.<br />
+              Requisito: mínimo {RECORRENCIA_VENDAS_MINIMAS_MES} vendas pessoais no mês anterior.
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Consultoria especializada</div>
+            <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.7 }}>
+              Mínimo {CONSULTORIA_PLACAS_ATIVAS_MINIMAS} placas com consultoria ativa.<br />
+              Consultores e Líderes: mínimo 5 vendas pessoais no mês anterior. Gestores: mínimo {EQUIPE_VENDAS_MIN_POR_PESSOA}.<br />
+              Valores permitidos: {CONSULTORIA_VALORES.map((v) => formatBRL(v)).join(" · ")}.
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Plano de Carreira (produção pessoal + equipe do mês anterior)</div>
+            <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ textAlign: "left", color: MUTED }}>
+                  <th style={{ padding: "4px 8px 8px 0" }}>Nível</th><th>Placas</th><th>Premiação</th>
+                </tr>
+              </thead>
+              <tbody>
+                {PLANO_FAIXAS.map((f) => (
+                  <tr key={f.nivel} style={{ borderTop: "1px solid #EEE" }}>
+                    <td style={{ padding: "6px 8px 6px 0" }}>{f.nivel}</td>
+                    <td>{f.min}+</td>
+                    <td>{formatBRL(f.premiacao)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ fontSize: 12.5, color: MUTED, marginTop: 8 }}>
+              Para níveis com premiação, exige-se pelo menos {EQUIPE_MIN_ELEGIVEIS} pessoas da equipe com {EQUIPE_VENDAS_MIN_POR_PESSOA}+ vendas no mês.
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Premiação semanal</div>
+            <div style={{ fontSize: 13, color: MUTED }}>A cada {PREMIACAO_SEMANAL_BLOCO} placas entregues na semana (segunda a domingo) → {formatBRL(PREMIACAO_SEMANAL_VALOR)}.</div>
+          </div>
+
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Premiação mensal (por placas vendidas no mês)</div>
+            <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+              <thead><tr style={{ textAlign: "left", color: MUTED }}><th style={{ padding: "4px 8px 8px 0" }}>Placas</th><th>Premiação</th></tr></thead>
+              <tbody>
+                {PREMIACAO_MENSAL_FAIXAS.map((f) => (
+                  <tr key={f.min} style={{ borderTop: "1px solid #EEE" }}>
+                    <td style={{ padding: "6px 8px 6px 0" }}>{f.min}+</td><td>{formatBRL(f.valor)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </SectionCard>
+    </div>
+  );
+}
+
+const rootEl = document.getElementById("root");
+ReactDOM.createRoot(rootEl).render(<App />);
+
+</script>
+
+</body>
+</html>
