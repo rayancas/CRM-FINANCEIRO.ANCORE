@@ -1299,6 +1299,19 @@ function renderRelatorios(){
 function renderConfiguracoes(){
   const config=DB.config;
   return `<div style="display:flex;flex-direction:column;gap:20px;">
+    ${sectionCard("Backup de dados (exportar / importar)",`
+      <div style="font-size:12.5px;color:${MUTED};margin-bottom:16px;line-height:1.6;">
+        Use isso para levar seus dados de um lugar para outro (por exemplo, do Claude para o site publicado no Vercel, ou entre dois navegadores/dispositivos).<br/>
+        <b>Exportar</b> baixa um arquivo <code>.json</code> com tudo o que está cadastrado aqui agora. <b>Importar</b> lê esse arquivo e substitui os dados atuais por ele.
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <button class="btn-primary" data-action="exportBackup">${ic('download',15)} Exportar dados (backup .json)</button>
+        <label class="btn-ghost" style="cursor:pointer;">${ic('save',14)} Importar dados
+          <input type="file" accept="application/json,.json" id="importBackupInput" style="display:none;" data-action="importBackupFile" />
+        </label>
+      </div>
+      <div id="importStatusMsg" style="margin-top:10px;font-size:12.5px;"></div>
+    `)}
     ${sectionCard("Seu cargo atual",`<div style="display:grid;grid-template-columns:1fr 2fr;gap:14px;align-items:end;">
       <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Cargo</span>
         <select class="input" data-action="setCargo">${CARGO_OPTS.map(o=>`<option value="${esc(o)}" ${config.meuCargo===o?'selected':''}>${esc(o)}</option>`).join("")}</select></label>
@@ -1323,6 +1336,41 @@ function renderConfiguracoes(){
       </div>
     `)}
   </div>`;
+}
+
+/* ---------------- BACKUP: EXPORTAR / IMPORTAR ---------------- */
+function exportBackup(){
+  const backup={
+    _tipo:"ancore-crm-backup", _versao:1, _exportadoEm:new Date().toISOString(),
+    associados:DB.associados, vendas:DB.vendas, despesas:DB.despesas, metas:DB.metas,
+    indicacoes:DB.indicacoes, equipe:DB.equipe, producaoEquipe:DB.producaoEquipe, config:DB.config,
+  };
+  const blob=new Blob([JSON.stringify(backup,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  const dataStr=new Date().toISOString().slice(0,10);
+  a.href=url; a.download=`ancore-backup-${dataStr}.json`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+async function importBackupFromFile(file){
+  const statusEl=document.getElementById("importStatusMsg");
+  try{
+    const text=await file.text();
+    const data=JSON.parse(text);
+    if(!data || typeof data!=="object"){ throw new Error("Arquivo inválido."); }
+    const map={associados:"associados",vendas:"vendas",despesas:"despesas",metas:"metas",indicacoes:"indicacoes",equipe:"equipe",producaoEquipe:"producaoEquipe"};
+    for(const collName of Object.keys(map)){
+      if(Array.isArray(data[collName])) await persist(collName,data[collName]);
+    }
+    if(data.config && typeof data.config==="object") await persistConfig({...DEFAULT_CONFIG,...data.config});
+    if(statusEl) statusEl.innerHTML=`<span style="color:${GREEN}">Dados importados com sucesso!</span>`;
+    rerender();
+  }catch(e){
+    console.error("Erro ao importar backup",e);
+    if(statusEl) statusEl.innerHTML=`<span style="color:${RED_DARK}">Não foi possível importar este arquivo. Verifique se é um backup gerado por este mesmo sistema.</span>`;
+    else alert("Não foi possível importar este arquivo.");
+  }
 }
 
 /* ---------------- ROOT RENDER ---------------- */
@@ -1505,6 +1553,9 @@ document.addEventListener("click",function(e){
   }
   if(action==="printRelatorio"){ window.print(); return; }
 
+  /* Backup */
+  if(action==="exportBackup"){ exportBackup(); return; }
+
   /* CRUD modal generic save */
   if(action==="saveCrud"){
     const m=UI.modal;
@@ -1599,6 +1650,11 @@ document.addEventListener("input",function(e){
 document.addEventListener("change",function(e){
   const t=e.target;
   const action=t.getAttribute("data-action");
+  if(action==="importBackupFile"){
+    const file=t.files&&t.files[0];
+    if(file) importBackupFromFile(file);
+    return;
+  }
   if(["carteiraOrigem","vendasStatus","vendasOrigem","vendasPlano","relOrigem","relPlano","relStatus","setCargo"].includes(action)){ /* handled in input already for selects triggers change too - noop */ }
 });
 
