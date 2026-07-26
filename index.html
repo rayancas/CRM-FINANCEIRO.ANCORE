@@ -320,7 +320,26 @@ function ic(name,size,color){
   return `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||""}</svg>`;
 }
 
-/* ---------------- STORAGE / DB ---------------- */
+/* ---------------- STORAGE / DB ----------------
+   window.storage só existe dentro do ambiente de artifacts do Claude.
+   Fora dele (Vercel, GitHub Pages, servidor próprio etc.) usamos localStorage
+   do navegador como alternativa, para que os dados continuem sendo salvos.
+   IMPORTANTE: localStorage é por NAVEGADOR/DISPOSITIVO — ver aviso no chat.
+------------------------------------------------- */
+const hasClaudeStorage = typeof window!=="undefined" && window.storage && typeof window.storage.get==="function";
+const storage = hasClaudeStorage ? window.storage : {
+  async get(key){
+    try{
+      const v=window.localStorage.getItem(key);
+      return v===null ? null : {key,value:v};
+    }catch(e){ return null; }
+  },
+  async set(key,value){
+    try{ window.localStorage.setItem(key,value); return {key,value}; }
+    catch(e){ console.error("Erro ao salvar no localStorage",e); return null; }
+  },
+};
+
 const DB={ associados:[], vendas:[], despesas:[], metas:[], indicacoes:[], equipe:[], producaoEquipe:[], config:{...DEFAULT_CONFIG} };
 let LOADING=true;
 
@@ -328,20 +347,20 @@ async function loadAll(){
   const keys=["associados","vendas","financeiro","metas","indicacoes","equipe","producaoEquipe"];
   const map={associados:"associados",vendas:"vendas",financeiro:"despesas",metas:"metas",indicacoes:"indicacoes",equipe:"equipe",producaoEquipe:"producaoEquipe"};
   for(const k of keys){
-    try{ const r=await window.storage.get(K[k]); if(r&&r.value) DB[map[k]]=JSON.parse(r.value); }catch(e){ /* ainda não existe */ }
+    try{ const r=await storage.get(K[k]); if(r&&r.value) DB[map[k]]=JSON.parse(r.value); }catch(e){ /* ainda não existe */ }
   }
-  try{ const r=await window.storage.get(K.config); if(r&&r.value) DB.config={...DEFAULT_CONFIG,...JSON.parse(r.value)}; }catch(e){}
+  try{ const r=await storage.get(K.config); if(r&&r.value) DB.config={...DEFAULT_CONFIG,...JSON.parse(r.value)}; }catch(e){}
   LOADING=false;
   render();
 }
 async function persist(collName,list){
   DB[collName]=list;
   const keyMap={associados:K.associados,vendas:K.vendas,despesas:K.financeiro,metas:K.metas,indicacoes:K.indicacoes,equipe:K.equipe,producaoEquipe:K.producaoEquipe};
-  try{ await window.storage.set(keyMap[collName],JSON.stringify(list)); }catch(e){ console.error("Erro ao salvar",collName,e); }
+  try{ await storage.set(keyMap[collName],JSON.stringify(list)); }catch(e){ console.error("Erro ao salvar",collName,e); }
 }
 async function persistConfig(cfg){
   DB.config=cfg;
-  try{ await window.storage.set(K.config,JSON.stringify(cfg)); }catch(e){ console.error("Erro ao salvar config",e); }
+  try{ await storage.set(K.config,JSON.stringify(cfg)); }catch(e){ console.error("Erro ao salvar config",e); }
 }
 function collSave(collName,item){
   const items=DB[collName];
