@@ -1,629 +1,1621 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
-import {
-  Users, Wallet, TrendingUp, Plus, Pencil, Trash2, X, Search,
-  LayoutDashboard, ClipboardList, CircleDollarSign, ChevronDown, Save
-} from "lucide-react";
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
-} from "recharts";
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ancore CRM Financeiro</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  :root{
+    --red:#DB3937; --red-dark:#FF6B65; --green:#3DDC84; --amber:#F0B429; --black:#0D0E10;
+    --silver:#2E3036; --ice:#12202B; --muted:#9AA1A9; --page-bg:#0A0A0F; --surface:#1A1A24;
+    --surface-alt:#22222E; --text:#EDEEF0; --border-soft:#2B2C38;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--page-bg);color:var(--text);}
+  body{font-family:'Inter',system-ui,-apple-system,sans-serif;}
+  button{transition:filter .15s ease,opacity .15s ease,transform .1s ease;font-family:inherit;}
+  button:hover{filter:brightness(1.12);}
+  button:active{transform:scale(0.98);}
+  input,select,textarea{transition:border-color .15s ease;font-family:inherit;}
+  input:focus,select:focus,textarea:focus{border-color:var(--red)!important;outline:none;}
+  a{color:inherit;}
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-thumb{background:var(--silver);border-radius:6px;}
+  .ancore-card{animation:fadeIn .25s ease both;}
+  @keyframes fadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+  .grid-2col{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .grid-3col{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;}
+  @media (max-width:900px){ .grid-2col{grid-template-columns:1fr!important;} .grid-3col{grid-template-columns:1fr!important;} }
+  table{border-collapse:collapse;width:100%;font-size:13px;min-width:720px;}
+  th{background:var(--black);color:#fff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;text-align:left;padding:10px 14px;white-space:nowrap;cursor:pointer;user-select:none;}
+  td{padding:10px 14px;color:var(--text);border-bottom:1px solid var(--border-soft);}
+  tr.rowclick{cursor:pointer;}
+  .icon-btn{background:none;border:none;cursor:pointer;color:var(--muted);padding:5px;margin-right:2px;}
+  .icon-btn.del{color:var(--red);}
+  .btn-primary{background:var(--red);color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;}
+  .btn-ghost{background:var(--surface);color:var(--text);border:1px solid var(--silver);border-radius:8px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;white-space:nowrap;text-decoration:none;}
+  .btn-ghost.active{background:var(--red);border-color:var(--red);}
+  .field-label{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px;}
+  .input,select,textarea.input{border:1px solid var(--silver);border-radius:8px;padding:9px 11px;font-size:14px;color:var(--text);background:var(--surface);outline:none;width:100%;}
+  textarea.input{resize:vertical;}
+  .badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;display:inline-block;}
+  .tone-green{background:rgba(61,220,132,.16);color:var(--green);}
+  .tone-red{background:rgba(255,107,101,.16);color:var(--red-dark);}
+  .tone-amber{background:rgba(240,180,41,.18);color:var(--amber);}
+  .tone-blue{background:rgba(96,165,250,.16);color:#60A5FA;}
+  .tone-gray{background:rgba(255,255,255,.08);color:var(--muted);}
+  .card{background:var(--surface);border-radius:14px;border:1px solid var(--silver);padding:22px;box-shadow:0 4px 24px rgba(0,0,0,.35);}
+  .kpi{background:var(--surface);border-radius:14px;padding:18px 20px;flex:1;min-width:190px;border:1px solid var(--silver);display:flex;flex-direction:column;gap:9px;box-shadow:0 4px 24px rgba(0,0,0,.35);}
+  .kpi .lbl{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;}
+  .kpi .val{font-size:23px;font-weight:800;color:var(--text);letter-spacing:-.01em;}
+  .kpi .sub{font-size:11.5px;font-weight:700;display:flex;align-items:center;gap:4px;}
+  .modal-overlay{position:fixed;inset:0;background:rgba(23,24,26,.55);display:flex;align-items:flex-start;justify-content:center;padding:5vh 16px;z-index:60;overflow-y:auto;}
+  .modal-box{background:var(--surface);border-radius:14px;width:100%;max-width:560px;box-shadow:0 20px 60px rgba(0,0,0,.5);overflow:hidden;}
+  .modal-box.wide{max-width:860px;}
+  .modal-head{background:var(--black);padding:16px 22px;display:flex;align-items:center;justify-content:space-between;border-top:3px solid var(--red);}
+  .modal-body{padding:22px;max-height:80vh;overflow-y:auto;}
+  .section-title{font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:0 0 16px;display:flex;justify-content:space-between;align-items:center;}
+  .table-wrap{background:var(--surface);border-radius:12px;border:1px solid var(--silver);overflow:hidden;}
+  .table-scroll{overflow-x:auto;}
+  .pager{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-top:1px solid var(--border-soft);font-size:12.5px;color:var(--muted);}
+  svg.ic{flex-shrink:0;}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modalRoot"></div>
 
-/* ---------------------------------------------------------------
-   ANCORE — SISTEMA FINANCEIRO DO CONSULTOR
-   Paleta: vermelho #DB3937 · preto #17181A · prata #C8CCD1 · azul gelo #E7F2F6
---------------------------------------------------------------- */
+<script>
+/* =================================================================
+   ANCORE CRM + ERP FINANCEIRO — versão HTML/JS puro
+================================================================= */
 
-const RED = "#DB3937";
-const RED_DARK = "#B12E2C";
-const BLACK = "#17181A";
-const CHARCOAL = "#232427";
-const SILVER = "#C8CCD1";
-const ICE = "#E7F2F6";
-const ICE_LINE = "#CFE3EC";
+/* ---------------- CONSTANTES ---------------- */
+const RED="#DB3937", RED_DARK="#FF6B65", GREEN="#3DDC84", AMBER="#F0B429", BLACK="#0D0E10";
+const SILVER="#2E3036", MUTED="#9AA1A9", SURFACE="#1A1A24", SURFACE_ALT="#22222E";
+const PIE_COLORS=[RED,"#5B8DEF",AMBER,GREEN,"#A78BFA","#F472B6"];
 
-const STORAGE_KEY_CARTEIRA = "ancore:carteira-associados";
-const STORAGE_KEY_FINANCEIRO = "ancore:financeiro-mensal";
-
-const ORIGEM_OPTS = ["Indicação", "Prospecção ativa", "Rede social", "Panfletagem", "Loja parceira", "Outro"];
-const PAGAMENTO_OPTS = ["Boleto", "Pix", "Cartão de crédito", "Débito automático"];
-
-function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-}
-
-function toNumber(v) {
-  if (v === "" || v === null || v === undefined) return 0;
-  const n = typeof v === "number" ? v : parseFloat(String(v).replace(/\./g, "").replace(",", "."));
-  return isNaN(n) ? 0 : n;
-}
-
-function formatBRL(n) {
-  return (n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-function formatDateBR(iso) {
-  if (!iso) return "—";
-  const [y, m, d] = iso.split("-");
-  if (!y || !m || !d) return iso;
-  return `${d}/${m}/${y}`;
-}
-
-function monthLabel(ym) {
-  if (!ym) return "—";
-  const [y, m] = ym.split("-");
-  const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-  const idx = parseInt(m, 10) - 1;
-  return `${meses[idx] ?? m}/${y.slice(2)}`;
-}
-
-/* ---------------------------------------------------------------
-   Campo genérico
---------------------------------------------------------------- */
-function Field({ label, children, span }) {
-  return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 6, gridColumn: span ? `span ${span}` : undefined }}>
-      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#6B7076" }}>
-        {label}
-      </span>
-      {children}
-    </label>
-  );
-}
-
-const inputStyle = {
-  border: `1px solid ${SILVER}`,
-  borderRadius: 8,
-  padding: "9px 11px",
-  fontSize: 14,
-  color: BLACK,
-  background: "#fff",
-  outline: "none",
-  fontFamily: "inherit",
-  width: "100%",
-  boxSizing: "border-box",
+const K={
+  associados:"ancore:crm:associados", vendas:"ancore:crm:vendas", financeiro:"ancore:crm:despesas",
+  metas:"ancore:crm:metas", indicacoes:"ancore:crm:indicacoes", config:"ancore:crm:config",
+  equipe:"ancore:crm:equipe", producaoEquipe:"ancore:crm:producao-equipe",
 };
 
-function TextInput(props) {
-  return <input {...props} style={{ ...inputStyle, ...(props.style || {}) }} />;
+const ORIGEM_OPTS=["Indicação","Instagram","Google","WhatsApp","Prospecção","Cliente antigo","Outros"];
+const PAGAMENTO_OPTS=["Boleto","Pix","Cartão de crédito","Débito automático"];
+const PLANO_OPTS=["Bronze","Prata","Ouro"];
+const VENDA_STATUS_OPTS=["Ativa","Ativa Pendente","Inadimplente","Cancelada"];
+const INDIC_STATUS_OPTS=["Pendente","Pago"];
+const CONSULTORIA_VALORES=[10,20,30,40,50];
+const CARGO_OPTS=["Consultor","Líder","Gestor"];
+const STATUS_EQUIPE_OPTS=["Ativo","Inativo"];
+
+const PLANO_FAIXAS=[
+  {nivel:"Consultor",min:0,premiacao:0},
+  {nivel:"Líder",min:30,premiacao:1000},
+  {nivel:"Gestor Executivo",min:50,premiacao:2500},
+  {nivel:"Gestor Executivo 2",min:75,premiacao:3000},
+  {nivel:"Gestor Executivo 3",min:100,premiacao:3500},
+];
+const PREMIACAO_MENSAL_FAIXAS=[{min:5,valor:300},{min:10,valor:600},{min:15,valor:900},{min:20,valor:1300}];
+const PREMIACAO_SEMANAL_BLOCO=5, PREMIACAO_SEMANAL_VALOR=150;
+const RECORRENCIA_BLOCO=100, RECORRENCIA_VALOR_POR_BLOCO=500, RECORRENCIA_VENDAS_MINIMAS_MES=10;
+const CONSULTORIA_PLACAS_ATIVAS_MINIMAS=10, EQUIPE_MIN_ELEGIVEIS=2, EQUIPE_VENDAS_MIN_POR_PESSOA=3;
+const CALENDARIO={
+  consultoria:{nf:13,pagamento:15,label:"Consultoria Especializada"},
+  recorrencia:{nf:18,pagamento:20,label:"Recorrência"},
+  planoDeCarreira:{nf:22,pagamento:25,label:"Plano de Carreira"},
+  premiacoes:{nf:22,pagamento:25,label:"Premiações Mensais e Semanais"},
+};
+function dataDoMes(mes,dia){ return `${mes}-${String(dia).padStart(2,"0")}`; }
+const DEFAULT_CONFIG={meuCargo:"Consultor"};
+
+/* ---------------- HELPERS ---------------- */
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); }
+function toNumber(v){ if(v===""||v===null||v===undefined) return 0; const n=typeof v==="number"?v:parseFloat(v); return isNaN(n)?0:n; }
+function formatBRL(n){ return (n||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"}); }
+function formatDateBR(iso){ if(!iso) return "—"; const [y,m,d]=iso.split("-"); if(!y||!m||!d) return iso; return `${d}/${m}/${y}`; }
+function monthLabel(ym){ if(!ym) return "—"; const [y,m]=ym.split("-"); const meses=["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"]; const idx=parseInt(m,10)-1; return `${meses[idx]??m}/${(y||"").slice(2)}`; }
+function pctChange(atual,anterior){ if(!anterior) return null; return ((atual-anterior)/anterior)*100; }
+function trendText(valorAtual,valorAnterior,contexto){ const pct=pctChange(valorAtual,valorAnterior); if(pct===null) return "Ainda não há mês anterior suficiente para comparar."; if(Math.abs(pct)<3) return `${contexto||"O indicador"} apresentou estabilidade em relação ao mês anterior.`; const dir=pct>=0?"Crescimento":"Queda"; return `${dir} de ${Math.abs(pct).toFixed(0)}% em relação ao mês anterior.`; }
+function currentMonth(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }
+function prevMonth(ym){ const [y,m]=ym.split("-").map(Number); const d=new Date(y,m-2,1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }
+function mondayOf(dateStr){ const d=new Date(dateStr+"T00:00:00"); const day=d.getDay(); const diff=day===0?-6:1-day; const monday=new Date(d); monday.setDate(d.getDate()+diff); return monday.toISOString().slice(0,10); }
+function monthsBetween(iso){ if(!iso) return 0; const start=new Date(iso); const now=new Date(); return Math.max(0,(now.getFullYear()-start.getFullYear())*12+(now.getMonth()-start.getMonth())); }
+function daysUntilBirthday(iso){ if(!iso) return 9999; const parts=iso.split("-").map(Number); const m=parts[1], d=parts[2]; const now=new Date(); let next=new Date(now.getFullYear(),m-1,d); if(next<new Date(now.getFullYear(),now.getMonth(),now.getDate())){ next=new Date(now.getFullYear()+1,m-1,d);} return Math.round((next-new Date(now.getFullYear(),now.getMonth(),now.getDate()))/86400000); }
+function ageFromDate(iso){ if(!iso) return "—"; const [y,m,d]=iso.split("-").map(Number); const now=new Date(); let age=now.getFullYear()-y; if(now.getMonth()+1<m||(now.getMonth()+1===m&&now.getDate()<d)) age--; return age; }
+function onlyDigits(s){ return (s||"").replace(/\D/g,""); }
+function waLink(phone){ return `https://wa.me/55${onlyDigits(phone)}`; }
+function nomeDoIndicado(i,associadoNome){ if(i.indicadoId) return associadoNome(i.indicadoId); if(i.indicadoNomeManual) return `${i.indicadoNomeManual} (não cadastrado)`; return "—"; }
+function addDays(iso,n){ const d=new Date(iso+"T00:00:00"); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function calcPrimeiroBoleto(dataVendaISO){
+  if(!dataVendaISO) return "";
+  const d=new Date(dataVendaISO+"T00:00:00"); const dia=d.getDate(); let mes=d.getMonth(); let ano=d.getFullYear(); let diaAlvo;
+  if(dia<=9){ diaAlvo=10; mes+=1; } else if(dia<=24){ diaAlvo=25; mes+=1; } else { diaAlvo=10; mes+=2; }
+  const alvo=new Date(ano,mes,diaAlvo); return alvo.toISOString().slice(0,10);
 }
-function Select({ options, ...props }) {
-  return (
-    <select {...props} style={{ ...inputStyle, ...(props.style || {}) }}>
+function getPrimeiroBoleto(venda){ return (venda&&venda.primeiroBoletoManual)||calcPrimeiroBoleto(venda&&venda.data); }
+function exportXLSX(rows,filename,sheetName){
+  const ws=XLSX.utils.json_to_sheet(rows); const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,sheetName||"Dados"); XLSX.writeFile(wb,filename);
+}
+function esc(s){ return (s===null||s===undefined)?"":String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+/* ---------------- REGRAS ANCORE / MOTOR FINANCEIRO ---------------- */
+function computePortfolioMetrics(vendas){
+  const ativas=vendas.filter(v=>v.status==="Ativa");
+  const placasAtivasSet=new Set(ativas.map(v=>(v.veiculoPlaca||"").toUpperCase()).filter(Boolean));
+  const placasAtivas=placasAtivasSet.size;
+  const consultoriasAtivas=ativas.filter(v=>toNumber(v.consultoria)>0).length;
+  const consultoriasVendidas=vendas.filter(v=>toNumber(v.consultoria)>0).length;
+  const totalPlacasVendidas=vendas.length;
+  const vendasComAdesao=vendas.filter(v=>toNumber(v.valorAdesao)>0);
+  const ticketMedioGeral=vendasComAdesao.length?vendasComAdesao.reduce((s,v)=>s+toNumber(v.valorAdesao),0)/vendasComAdesao.length:0;
+  const ativaPendentes=vendas.filter(v=>v.status==="Ativa Pendente").length;
+  const inadimplentes=vendas.filter(v=>v.status==="Inadimplente").length;
+  const cancelados=vendas.filter(v=>v.status==="Cancelada").length;
+  return {ativas,placasAtivas,consultoriasAtivas,consultoriasVendidas,totalPlacasVendidas,ticketMedioGeral,ativaPendentes,inadimplentes,cancelados};
+}
+function vendasDoMes(vendas,mes){ return vendas.filter(v=>(v.data||"").startsWith(mes)); }
+function jaFaturandoEm(venda,mesRef){ const primeiroBoleto=getPrimeiroBoleto(venda); if(!primeiroBoleto) return false; return primeiroBoleto<=`${mesRef}-31`; }
+function computePremiacaoMensal(qtdPlacas){ let valor=0; for(const f of PREMIACAO_MENSAL_FAIXAS){ if(qtdPlacas>=f.min) valor=f.valor; } return valor; }
+function computePremiacaoSemanalDoMes(vendas,mes){
+  const byWeek={};
+  vendas.forEach(v=>{ if(!v.data) return; const monday=mondayOf(v.data); if(!monday.startsWith(mes)) return; byWeek[monday]=(byWeek[monday]||0)+1; });
+  const weeks=Object.entries(byWeek).sort((a,b)=>a[0].localeCompare(b[0])).map(([monday,count])=>({monday,count,valor:Math.floor(count/PREMIACAO_SEMANAL_BLOCO)*PREMIACAO_SEMANAL_VALOR}));
+  return {total:weeks.reduce((s,w)=>s+w.valor,0),weeks};
+}
+function computePlanoCarreiraDoMes(vendas,producaoEquipe,consultores,mes){
+  const producaoPessoal=vendasDoMes(vendas,mes).length;
+  const producaoEquipeDoMes=producaoEquipe.filter(p=>p.competencia===mes);
+  const producaoEquipeTotal=producaoEquipeDoMes.reduce((s,p)=>s+toNumber(p.placasVendidas),0);
+  const producaoTotal=producaoPessoal+producaoEquipeTotal;
+  const selecionados=(consultores||[]).filter(c=>c.selecionadoPlanoCarreira);
+  const elegiveisEquipe=selecionados.filter(c=>{ const p=producaoEquipeDoMes.find(x=>x.consultorId===c.id); return p&&toNumber(p.placasVendidas)>=EQUIPE_VENDAS_MIN_POR_PESSOA; }).length;
+  const requisitoEquipeOk=selecionados.length>=EQUIPE_MIN_ELEGIVEIS&&elegiveisEquipe>=EQUIPE_MIN_ELEGIVEIS;
+  const faixa=[...PLANO_FAIXAS].reverse().find(f=>producaoTotal>=f.min)||PLANO_FAIXAS[0];
+  const premiacaoLiberada=faixa.premiacao>0&&requisitoEquipeOk?faixa.premiacao:0;
+  return {mes,producaoPessoal,producaoEquipeTotal,producaoTotal,elegiveisEquipe,requisitoEquipeOk,faixa,premiacaoLiberada};
+}
+function computeFinanceiroMes(vendas,producaoEquipe,indicacoes,config,mes,consultores){
+  const mesAnterior=prevMonth(mes);
+  const vMes=vendasDoMes(vendas,mes);
+  const adesoesMes=vMes.reduce((s,v)=>s+toNumber(v.valorAdesao),0);
+  const totalAdesoesQtd=vMes.length;
+  const ticketMedio=totalAdesoesQtd?adesoesMes/totalAdesoesQtd:0;
+  const vendasMesAnterior=vendasDoMes(vendas,mesAnterior);
+  const placasVendidasMesAnterior=vendasMesAnterior.length;
+  const premiacaoMensal=computePremiacaoMensal(placasVendidasMesAnterior);
+  const semanal=computePremiacaoSemanalDoMes(vendas,mesAnterior);
+  const premiacaoSemanal=semanal.total;
+  const consultoriasAtivasTotal=vendas.filter(v=>v.status==="Ativa"&&toNumber(v.consultoria)>0&&jaFaturandoEm(v,mesAnterior)).length;
+  const minVendasConsultoria=config.meuCargo==="Gestor"?3:5;
+  const consultoriaElegivel=consultoriasAtivasTotal>=CONSULTORIA_PLACAS_ATIVAS_MINIMAS&&placasVendidasMesAnterior>=minVendasConsultoria;
+  const consultoriaPrevista=consultoriaElegivel?vendas.filter(v=>v.status==="Ativa"&&toNumber(v.consultoria)>0&&jaFaturandoEm(v,mesAnterior)).reduce((s,v)=>s+toNumber(v.consultoria),0):0;
+  const placasAtivasMesAnterior=vendas.filter(v=>v.status==="Ativa"&&jaFaturandoEm(v,mesAnterior)).length;
+  const recorrenciaElegivel=placasVendidasMesAnterior>=RECORRENCIA_VENDAS_MINIMAS_MES;
+  const recorrenciaBlocos=Math.floor(placasAtivasMesAnterior/RECORRENCIA_BLOCO);
+  const recorrenciaPrevista=recorrenciaElegivel?recorrenciaBlocos*RECORRENCIA_VALOR_POR_BLOCO:0;
+  const producaoEquipeMesAnterior=producaoEquipe.filter(p=>p.competencia===mesAnterior);
+  const producaoEquipeTotal=producaoEquipeMesAnterior.reduce((s,p)=>s+toNumber(p.placasVendidas),0);
+  const producaoPessoal=placasVendidasMesAnterior;
+  const producaoTotal=producaoPessoal+producaoEquipeTotal;
+  const selecionadosPlanoCarreira=(consultores||[]).filter(c=>c.selecionadoPlanoCarreira);
+  const elegiveisEquipe=selecionadosPlanoCarreira.filter(c=>{ const p=producaoEquipeMesAnterior.find(x=>x.consultorId===c.id); return p&&toNumber(p.placasVendidas)>=EQUIPE_VENDAS_MIN_POR_PESSOA; }).length;
+  const requisitoEquipeOk=selecionadosPlanoCarreira.length>=EQUIPE_MIN_ELEGIVEIS&&elegiveisEquipe>=EQUIPE_MIN_ELEGIVEIS;
+  const faixa=[...PLANO_FAIXAS].reverse().find(f=>producaoTotal>=f.min)||PLANO_FAIXAS[0];
+  const planoDeCarreiraPrevisto=faixa.premiacao>0&&requisitoEquipeOk?faixa.premiacao:0;
+  const indicacoesPagas=indicacoes.filter(i=>i.status==="Pago"&&(i.data||"").startsWith(mes)).reduce((s,i)=>s+toNumber(i.valorComissao),0);
+  const totalPrevisto=adesoesMes+premiacaoMensal+premiacaoSemanal+consultoriaPrevista+planoDeCarreiraPrevisto+recorrenciaPrevista-indicacoesPagas;
+  return {mes,mesAnterior,adesoesMes,totalAdesoesQtd,ticketMedio,premiacaoMensal,placasVendidasMesAnterior,premiacaoSemanal,semanalDetalhe:semanal.weeks,
+    consultoriaPrevista,consultoriaElegivel,consultoriasAtivasTotal,minVendasConsultoria,recorrenciaPrevista,recorrenciaElegivel,placasAtivasMesAnterior,recorrenciaBlocos,
+    producaoPessoal,producaoEquipeTotal,producaoTotal,elegiveisEquipe,requisitoEquipeOk,faixa,planoDeCarreiraPrevisto,indicacoesPagas,totalPrevisto};
+}
+
+/* ---------------- SCHEMAS ---------------- */
+const ASSOCIADO_SCHEMA=[
+  {key:"nomeCompleto",label:"Nome completo",span:2},
+  {key:"cpf",label:"CPF",placeholder:"000.000.000-00"},
+  {key:"telefone",label:"Telefone",placeholder:"(00) 00000-0000"},
+  {key:"email",label:"E-mail",type:"email"},
+  {key:"origem",label:"Origem",type:"select",options:ORIGEM_OPTS},
+  {key:"dataNascimento",label:"Data de nascimento",type:"date"},
+];
+const VENDA_SCHEMA=[
+  {key:"data",label:"Data do contrato",type:"date"},
+  {key:"associadoId",label:"Associado",type:"lookup",span:2,lookupName:"associadoId"},
+  {key:"veiculoModelo",label:"Modelo do veículo"},
+  {key:"veiculoPlaca",label:"Placa",placeholder:"ABC1D23"},
+  {key:"plano",label:"Plano",type:"select",options:PLANO_OPTS},
+  {key:"status",label:"Status",type:"select",options:VENDA_STATUS_OPTS},
+  {key:"valorAdesao",label:"Valor da adesão (R$)",type:"number",placeholder:"249,90"},
+  {key:"consultoria",label:"Consultoria especializada (R$)",type:"select",options:CONSULTORIA_VALORES.map(String)},
+  {key:"primeiraMensalidade",label:"Valor da 1ª mensalidade (R$)",type:"number",placeholder:"179,50"},
+  {key:"primeiroBoletoManual",label:"Data do 1º boleto (editar apenas se diferente da regra automática)",type:"date"},
+  {key:"dataUltimoBoletoPago",label:"Data do último boleto pago (cancelamento/inadimplência)",type:"date"},
+  {key:"observacoes",label:"Observações",type:"textarea",span:2},
+];
+const DESPESA_SCHEMA=[
+  {key:"competencia",label:"Competência",type:"month",span:2},
+  {key:"despesas",label:"Despesas (R$)",type:"number"},
+  {key:"outrasReceitas",label:"Outras receitas (R$)",type:"number"},
+  {key:"observacoes",label:"Observações",type:"textarea",span:2},
+];
+const INDICACAO_SCHEMA=[
+  {key:"indicadorId",label:"Associado que indicou",type:"lookup",span:2,lookupName:"indicadorId"},
+  {key:"data",label:"Data da indicação",type:"date"},
+  {key:"valorComissao",label:"Valor da comissão (R$)",type:"number"},
+  {key:"status",label:"Status",type:"select",options:INDIC_STATUS_OPTS},
+];
+const CONSULTOR_SCHEMA=[
+  {key:"nome",label:"Nome do consultor",span:2},
+  {key:"status",label:"Status",type:"select",options:STATUS_EQUIPE_OPTS},
+  {key:"dataEntrada",label:"Data de entrada",type:"date"},
+  {key:"cargo",label:"Cargo",type:"select",options:CARGO_OPTS},
+  {key:"telefone",label:"Telefone"},
+  {key:"observacoes",label:"Observações",type:"textarea",span:2},
+];
+const PRODUCAO_SCHEMA=[
+  {key:"competencia",label:"Competência",type:"month",span:2},
+  {key:"consultorId",label:"Consultor",type:"lookup",span:2,lookupName:"consultorId"},
+  {key:"placasVendidas",label:"Placas vendidas",type:"number"},
+  {key:"placasAtivas",label:"Placas ativas",type:"number"},
+  {key:"observacoes",label:"Observações",type:"textarea",span:2},
+];
+
+const NAV=[
+  {key:"dashboard",label:"Dashboard",icon:"dashboard"},
+  {key:"carteira",label:"Carteira de associados",icon:"users"},
+  {key:"financeiro",label:"Financeiro",icon:"wallet"},
+  {key:"vendas",label:"Vendas",icon:"cart"},
+  {key:"equipe",label:"Equipe",icon:"usercog"},
+  {key:"metas",label:"Metas",icon:"target"},
+  {key:"recorrencia",label:"Recorrência",icon:"repeat"},
+  {key:"aniversariantes",label:"Aniversariantes",icon:"gift"},
+  {key:"indicacoes",label:"Indicações",icon:"share"},
+  {key:"relatorios",label:"Relatórios",icon:"clipboard"},
+  {key:"configuracoes",label:"Configurações",icon:"settings"},
+];
+
+/* ---------------- ICONS (SVG simples) ---------------- */
+const ICONS={
+  dashboard:'<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+  users:'<circle cx="9" cy="7" r="3"/><path d="M2 21v-1c0-3 3-5 7-5s7 2 7 5v1"/><circle cx="17" cy="8" r="2.3"/><path d="M17 13c2.7.4 4.5 2 4.5 4.6V19"/>',
+  wallet:'<rect x="2.5" y="6" width="19" height="13" rx="2"/><path d="M2.5 10h19"/><circle cx="17" cy="14" r="1.3"/>',
+  cart:'<circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M2 3h2l2.6 12.4a2 2 0 0 0 2 1.6h8.8a2 2 0 0 0 2-1.6L21 7H6"/>',
+  usercog:'<circle cx="9" cy="8" r="3.2"/><path d="M2.5 21v-1c0-3.2 3-5.4 6.5-5.4s6.5 2.2 6.5 5.4v1"/><circle cx="19" cy="8" r="2.3"/><path d="M19 5.2v-1M19 11.8v1M21.4 6.6l-.8.5M17.4 9l-.8.4M21.4 9.4l-.8-.4M17.4 7l-.8-.5"/>',
+  target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.3"/>',
+  repeat:'<path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>',
+  gift:'<rect x="3" y="8" width="18" height="13" rx="1"/><path d="M3 12h18"/><path d="M12 8v13"/><path d="M12 8C9 8 8 6.5 8 5a2 2 0 0 1 4 0 2 2 0 0 1 4 0c0 1.5-1 3-4 3z"/>',
+  share:'<circle cx="18" cy="5" r="2.4"/><circle cx="6" cy="12" r="2.4"/><circle cx="18" cy="19" r="2.4"/><path d="M8.2 10.7l7.6-4.3M8.2 13.3l7.6 4.3"/>',
+  clipboard:'<rect x="5" y="4" width="14" height="17" rx="2"/><rect x="9" y="2.3" width="6" height="3.4" rx="1"/><path d="M8 11h8M8 15h8M8 19h5"/>',
+  settings:'<circle cx="12" cy="12" r="3"/><path d="M19.4 13a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V19a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.9l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H4a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 5.7 6a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.9-2.9l.1.1a1.7 1.7 0 0 0 1.9.3H10a1.7 1.7 0 0 0 1-1.5V4a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.9 2.9l-.1.1a1.7 1.7 0 0 0-.3 1.9V6a1.7 1.7 0 0 0 1.5 1H20a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  pencil:'<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  trash:'<path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>',
+  x:'<path d="M18 6L6 18M6 6l12 12"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+  chevronLeft:'<path d="M15 18l-6-6 6-6"/>',
+  chevronRight:'<path d="M9 18l6-6-6-6"/>',
+  save:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/>',
+  arrowLeft:'<path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/>',
+  check:'<path d="M20 6L9 17l-5-5"/>',
+  alert:'<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>',
+  filter:'<path d="M22 3H2l8 9.5V19l4 2v-8.5z"/>',
+  download:'<path d="M12 3v13"/><path d="M6 11l6 6 6-6"/><path d="M4 21h16"/>',
+  printer:'<path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="1"/><path d="M6 17v4h12v-4"/>',
+  message:'<path d="M21 11.5a8.4 8.4 0 0 1-8.7 8.4 8.7 8.7 0 0 1-3.8-.9L3 21l1.9-5a8.4 8.4 0 1 1 16.1-4.5z"/>',
+  lock:'<rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>',
+  trendUp:'<path d="M3 17l6-6 4 4 8-8"/><path d="M15 6h6v6"/>',
+  trendDown:'<path d="M3 7l6 6 4-4 8 8"/><path d="M15 17h6v-6"/>',
+  car:'<path d="M3 13l1.5-4.5A2 2 0 0 1 6.4 7h11.2a2 2 0 0 1 1.9 1.5L21 13"/><rect x="2" y="13" width="20" height="6" rx="2"/><circle cx="7" cy="19" r="1.6"/><circle cx="17" cy="19" r="1.6"/>',
+  dollar:'<circle cx="12" cy="12" r="9"/><path d="M12 6v12M15 9.5c0-1.4-1.3-2.2-3-2.2s-3 .9-3 2.2c0 3 6 1.6 6 4.5 0 1.4-1.3 2.2-3 2.2s-3-.8-3-2.2"/>',
+};
+function ic(name,size,color){
+  const s=size||15, c=color||"currentColor";
+  return `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]||""}</svg>`;
+}
+
+/* ---------------- STORAGE / DB ---------------- */
+const DB={ associados:[], vendas:[], despesas:[], metas:[], indicacoes:[], equipe:[], producaoEquipe:[], config:{...DEFAULT_CONFIG} };
+let LOADING=true;
+
+async function loadAll(){
+  const keys=["associados","vendas","financeiro","metas","indicacoes","equipe","producaoEquipe"];
+  const map={associados:"associados",vendas:"vendas",financeiro:"despesas",metas:"metas",indicacoes:"indicacoes",equipe:"equipe",producaoEquipe:"producaoEquipe"};
+  for(const k of keys){
+    try{ const r=await window.storage.get(K[k]); if(r&&r.value) DB[map[k]]=JSON.parse(r.value); }catch(e){ /* ainda não existe */ }
+  }
+  try{ const r=await window.storage.get(K.config); if(r&&r.value) DB.config={...DEFAULT_CONFIG,...JSON.parse(r.value)}; }catch(e){}
+  LOADING=false;
+  render();
+}
+async function persist(collName,list){
+  DB[collName]=list;
+  const keyMap={associados:K.associados,vendas:K.vendas,despesas:K.financeiro,metas:K.metas,indicacoes:K.indicacoes,equipe:K.equipe,producaoEquipe:K.producaoEquipe};
+  try{ await window.storage.set(keyMap[collName],JSON.stringify(list)); }catch(e){ console.error("Erro ao salvar",collName,e); }
+}
+async function persistConfig(cfg){
+  DB.config=cfg;
+  try{ await window.storage.set(K.config,JSON.stringify(cfg)); }catch(e){ console.error("Erro ao salvar config",e); }
+}
+function collSave(collName,item){
+  const items=DB[collName];
+  let next;
+  if(item.id){ next=items.map(i=>i.id===item.id?item:i); }
+  else{ next=[{...item,id:uid()},...items]; }
+  persist(collName,next).then(rerender);
+}
+function collRemove(collName,id){
+  persist(collName,DB[collName].filter(i=>i.id!==id)).then(rerender);
+}
+
+/* ---------------- UI STATE (efêmero) ---------------- */
+const UI={
+  tab:"dashboard", sidebarOpen:true, globalQuery:"", selectedAssociadoId:null,
+  modal:null, // {kind, mode, draft, ...}
+  dashboardMes: currentMonth(),
+  financeiroMes: currentMonth(),
+  recorrenciaMes: currentMonth(),
+  carteira:{search:"",origem:""},
+  vendas:{search:"",status:"",showFiltros:false,origem:"",plano:"",inicio:"",fim:""},
+  aniversariantes:{onlyWeek:false},
+  relatorios:{origem:"",plano:"",status:"",inicio:"",fim:""},
+  sort:{}, page:{},
+  fichaNovaNota:"",
+  docDrafts:{},
+};
+
+/* ---------------- RENDER HELPERS (preserva foco) ---------------- */
+function rerender(){
+  const active=document.activeElement;
+  let id=null, selStart=null, selEnd=null, scrollY=window.scrollY;
+  if(active && active.id){ id=active.id; if("selectionStart" in active){ try{ selStart=active.selectionStart; selEnd=active.selectionEnd; }catch(e){} } }
+  render();
+  if(id){
+    const el=document.getElementById(id);
+    if(el){ el.focus(); if(selStart!=null && el.setSelectionRange){ try{ el.setSelectionRange(selStart,selEnd);}catch(e){} } }
+  }
+  window.scrollTo(0,scrollY);
+}
+
+function associadoNome(id){ const a=DB.associados.find(x=>x.id===id); return a?a.nomeCompleto:"—"; }
+function consultorNome(id){ const c=DB.equipe.find(x=>x.id===id); return c?c.nome:"—"; }
+
+function statusTone(status){
+  if(status==="Ativa"||status==="Ativo"||status==="Pago") return "green";
+  if(status==="Ativa Pendente") return "blue";
+  if(status==="Inadimplente"||status==="Pendente") return "amber";
+  if(status==="Cancelada"||status==="Cancelado") return "red";
+  return "gray";
+}
+function badge(text,tone){ return `<span class="badge tone-${tone||'gray'}">${esc(text)}</span>`; }
+
+function kpiCard(iconName,label,value,opts){
+  opts=opts||{};
+  const accent=opts.accent||RED;
+  const glow=opts.glow?`box-shadow:0 4px 24px rgba(0,0,0,.35), 0 0 24px rgba(219,57,55,.25); border-color:${RED};`:"";
+  const sub=opts.sub?`<span class="sub" style="color:${opts.subTone==='down'?RED_DARK:opts.subTone==='up'?GREEN:MUTED}">${opts.subTone==='up'?ic('trendUp',12):opts.subTone==='down'?ic('trendDown',12):""}${esc(opts.sub)}</span>`:"";
+  return `<div class="kpi ancore-card" style="border-top:3px solid ${accent};${glow}">
+    <div class="lbl">${ic(iconName,15)}<span>${esc(label)}</span></div>
+    <span class="val">${value}</span>
+    ${sub}
+  </div>`;
+}
+function sectionCard(title,innerHTML,right,subtitle){
+  return `<div class="card ancore-card">
+    <h3 class="section-title" style="margin-bottom:${subtitle?'4px':'16px'}">${esc(title)}${right?`<span>${right}</span>`:""}</h3>
+    ${subtitle?`<div style="font-size:12px;color:${MUTED};margin-bottom:16px;">${esc(subtitle)}</div>`:""}
+    ${innerHTML}
+  </div>`;
+}
+
+/* Generic sortable/paginated data table.
+   columns: [{key,label,render(row)}]
+   tableId: unique id used for sort/page state + row actions
+*/
+function dataTable(tableId,columns,rows,opts){
+  opts=opts||{};
+  const st=(UI.sort[tableId])||null;
+  let sortedRows=rows;
+  if(opts.sortable && st){
+    sortedRows=[...rows].sort((a,b)=>{
+      const av=a[st.key], bv=b[st.key];
+      const an=parseFloat(av), bn=parseFloat(bv);
+      const bothNumeric = av!==""&&bv!==""&&av!==undefined&&bv!==undefined&&!isNaN(an)&&!isNaN(bn);
+      const cmp=bothNumeric? an-bn : String(av??"").localeCompare(String(bv??""));
+      return st.dir==="asc"?cmp:-cmp;
+    });
+  }
+  const pageSize=opts.pageSize||null;
+  let page=UI.page[tableId]||0;
+  const totalPages=pageSize?Math.max(1,Math.ceil(sortedRows.length/pageSize)):1;
+  if(page>totalPages-1) page=totalPages-1;
+  const pageRows=pageSize?sortedRows.slice(page*pageSize,page*pageSize+pageSize):sortedRows;
+
+  const hasActions = opts.onEdit||opts.onDelete;
+  const thead=`<tr>${columns.map(c=>`<th data-sortkey="${esc(c.key)}" data-table="${tableId}" ${opts.sortable?'class="sortableTh"':''}>${esc(c.label)}${opts.sortable&&st&&st.key===c.key?(st.dir==="asc"?" ▲":" ▼"):""}</th>`).join("")}${hasActions?'<th></th>':''}</tr>`;
+
+  let tbody;
+  if(pageRows.length===0){
+    tbody=`<tr><td colspan="${columns.length+(hasActions?1:0)}" style="padding:30px;text-align:center;color:${MUTED}">${esc(opts.emptyText||"Nenhum registro.")}</td></tr>`;
+  }else{
+    tbody=pageRows.map((row,i)=>{
+      const cells=columns.map(c=>`<td>${c.render?c.render(row):(row[c.key]??"—")}</td>`).join("");
+      const actions=hasActions?`<td style="white-space:nowrap;">
+        ${opts.onEdit?`<button class="icon-btn" data-action="edit" data-table="${tableId}" data-id="${row.id}">${ic('pencil',14)}</button>`:""}
+        ${opts.onDelete?`<button class="icon-btn del" data-action="delete" data-table="${tableId}" data-id="${row.id}">${ic('trash',14)}</button>`:""}
+      </td>`:"";
+      const rowClickAttr = opts.onRowClick ? `class="rowclick" data-action="rowclick" data-table="${tableId}" data-id="${row.id}"` : "";
+      return `<tr style="background:${i%2?SURFACE_ALT:SURFACE}" ${rowClickAttr}>${cells}${actions}</tr>`;
+    }).join("");
+  }
+  let pager="";
+  if(pageSize && sortedRows.length>pageSize){
+    pager=`<div class="pager"><span>${sortedRows.length} registro(s) · página ${page+1} de ${totalPages}</span>
+      <div style="display:flex;gap:8px;">
+        <button class="icon-btn" data-action="pagePrev" data-table="${tableId}" ${page===0?'style="opacity:.4"':''}>${ic('chevronLeft',16)}</button>
+        <button class="icon-btn" data-action="pageNext" data-table="${tableId}" ${page>=totalPages-1?'style="opacity:.4"':''}>${ic('chevronRight',16)}</button>
+      </div></div>`;
+  }
+  DB._tableRegistry=DB._tableRegistry||{};
+  DB._tableRegistry[tableId]={rows,opts};
+  return `<div class="table-wrap"><div class="table-scroll"><table><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>${pager}</div>`;
+}
+
+/* ---------------- SCHEMA FORM / CRUD MODAL ---------------- */
+function fieldHTML(f,draft,lookupOptions){
+  const val=draft[f.key]??"";
+  const span=f.span?`grid-column:span ${f.span}`:"";
+  const id=`field-${f.key}`;
+  let control;
+  if(f.type==="lookup"){
+    const opts=(lookupOptions&&lookupOptions[f.lookupName])||[];
+    control=`<select class="input" id="${id}" data-field="${f.key}" data-kind="modalfield">
       <option value="">Selecionar…</option>
-      {options.map((o) => (
-        <option key={o} value={o}>{o}</option>
-      ))}
-    </select>
-  );
+      ${opts.map(o=>`<option value="${esc(o.id)}" ${val===o.id?'selected':''}>${esc(o.label)}${o.sub?` (${esc(o.sub)})`:""}</option>`).join("")}
+    </select>`;
+  }else if(f.type==="select"){
+    control=`<select class="input" id="${id}" data-field="${f.key}" data-kind="modalfield">
+      <option value="">Selecionar…</option>
+      ${f.options.map(o=>`<option value="${esc(o)}" ${val===o?'selected':''}>${esc(o)}</option>`).join("")}
+    </select>`;
+  }else if(f.type==="textarea"){
+    control=`<textarea class="input" id="${id}" data-field="${f.key}" data-kind="modalfield" rows="3">${esc(val)}</textarea>`;
+  }else{
+    control=`<input class="input" id="${id}" type="${f.type||'text'}" ${f.type==='number'?'step="0.01" inputmode="decimal"':''} placeholder="${esc(f.placeholder||'')}" value="${esc(val)}" data-field="${f.key}" data-kind="modalfield" />`;
+  }
+  return `<label style="display:flex;flex-direction:column;gap:6px;${span}"><span class="field-label">${esc(f.label)}</span>${control}</label>`;
+}
+function schemaFormHTML(schema,draft,lookupOptions){
+  return `<div class="grid-2col">${schema.map(f=>fieldHTML(f,draft,lookupOptions)).join("")}</div>`;
 }
 
-/* ---------------------------------------------------------------
-   Modal
---------------------------------------------------------------- */
-function Modal({ title, onClose, children, wide }) {
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, background: "rgba(23,24,26,0.55)",
-        display: "flex", alignItems: "flex-start", justifyContent: "center",
-        padding: "5vh 16px", zIndex: 50, overflowY: "auto",
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "#fff", borderRadius: 14, width: "100%",
-          maxWidth: wide ? 780 : 560, boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
-          overflow: "hidden",
-        }}
-      >
-        <div style={{
-          background: BLACK, padding: "16px 22px", display: "flex",
-          alignItems: "center", justifyContent: "space-between",
-          borderTop: `3px solid ${RED}`,
-        }}>
-          <h2 style={{ color: "#fff", fontSize: 16, fontWeight: 700, margin: 0, letterSpacing: "0.02em" }}>{title}</h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: SILVER, padding: 4 }}>
-            <X size={20} />
-          </button>
+function lookupOptionsFor(){
+  return {
+    associadoId: DB.associados.map(a=>({id:a.id,label:a.nomeCompleto,sub:a.cpf})),
+    indicadorId: DB.associados.map(a=>({id:a.id,label:a.nomeCompleto,sub:a.cpf})),
+    consultorId: DB.equipe.map(c=>({id:c.id,label:c.nome,sub:c.cargo})),
+  };
+}
+
+function openModal(cfg){ UI.modal=cfg; rerender(); }
+function closeModal(){ UI.modal=null; rerender(); }
+
+function renderModal(){
+  const m=UI.modal;
+  if(!m) return "";
+  if(m.kind==="crud") return renderCrudModal(m);
+  if(m.kind==="meta") return renderMetaModal(m);
+  if(m.kind==="indicacao") return renderIndicacaoModal(m);
+  return "";
+}
+
+function renderCrudModal(m){
+  const lookupOptions=lookupOptionsFor();
+  let extra="";
+  if(m.extra==="vendaDocs"){
+    extra=documentosFieldHTML("Documentos do veículo (desta venda/placa)","vendaDocs",m.draft.documentosVeiculo||[],["CRLV","Termo de Adesão","Laudo de Vistoria","Fotos da Vistoria","Outros"]);
+  }
+  return `<div class="modal-overlay" data-action="overlayClose">
+    <div class="modal-box ${m.wide?'wide':''}" data-stop="1">
+      <div class="modal-head"><h2 style="color:#fff;font-size:16px;font-weight:700;margin:0;">${esc(m.title)}</h2>
+        <button class="icon-btn" style="color:${SILVER}" data-action="closeModal">${ic('x',20)}</button></div>
+      <div class="modal-body">
+        <div style="display:flex;flex-direction:column;gap:16px;">
+          ${schemaFormHTML(m.schema,m.draft,lookupOptions)}
+          ${extra}
+          <div style="display:flex;justify-content:flex-end;gap:10px;">
+            <button class="btn-ghost" data-action="closeModal">Cancelar</button>
+            <button class="btn-primary" data-action="saveCrud">${ic('save',15)} Salvar</button>
+          </div>
         </div>
-        <div style={{ padding: 22 }}>{children}</div>
       </div>
     </div>
-  );
+  </div>`;
 }
 
-/* ---------------------------------------------------------------
-   Formulário — Associado
---------------------------------------------------------------- */
-const EMPTY_ASSOCIADO = {
-  dataContrato: "", nomeCompleto: "", telefone: "", cpf: "", aniversario: "",
-  placa: "", origem: "", adesao: "", formaPagamento: "", consultoria: "",
-  valorPrimeiraMensalidade: "", dataPrimeiroBoleto: "", planoEscolhido: "",
-  brindeDaSemana: "", observacoes: "",
-};
+function documentosFieldHTML(label,ns,docs,tipos){
+  UI.docDrafts[ns]=UI.docDrafts[ns]||{tipo:tipos[0],nome:""};
+  const d=UI.docDrafts[ns];
+  return `<div>
+    <span class="field-label" style="margin-bottom:8px;">${esc(label)}</span>
+    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+      <select class="input" style="max-width:200px" data-action="docTipo" data-ns="${ns}">${tipos.map(t=>`<option ${d.tipo===t?'selected':''}>${esc(t)}</option>`).join("")}</select>
+      <input class="input" style="flex:1;min-width:160px" placeholder="Nome do arquivo / anotação" value="${esc(d.nome)}" data-action="docNome" data-ns="${ns}" id="docnome-${ns}" />
+      <button class="btn-ghost" data-action="docAdd" data-ns="${ns}">${ic('plus',14)} Adicionar</button>
+    </div>
+    ${docs.length===0?`<div style="color:${MUTED};font-size:12.5px;">Nenhum documento anexado.</div>`:
+      `<div style="display:flex;flex-direction:column;gap:6px;">${docs.map((doc,i)=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;background:${SURFACE_ALT};border-radius:8px;padding:8px 12px;font-size:12.5px;">
+          <span><b>${esc(doc.tipo)}</b> — ${esc(doc.nome)} <span style="color:${MUTED}">· ${formatDateBR(doc.data)}</span></span>
+          <button class="icon-btn del" data-action="docRemove" data-ns="${ns}" data-idx="${i}">${ic('trash',13)}</button>
+        </div>`).join("")}</div>`}
+  </div>`;
+}
 
-function AssociadoForm({ initial, onSave, onCancel }) {
-  const [f, setF] = useState(initial || EMPTY_ASSOCIADO);
-  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-        <Field label="Nome completo" span={2}>
-          <TextInput value={f.nomeCompleto} onChange={set("nomeCompleto")} placeholder="Nome do associado" />
-        </Field>
-        <Field label="Data de contrato">
-          <TextInput type="date" value={f.dataContrato} onChange={set("dataContrato")} />
-        </Field>
-        <Field label="Aniversário">
-          <TextInput type="date" value={f.aniversario} onChange={set("aniversario")} />
-        </Field>
-        <Field label="Telefone">
-          <TextInput value={f.telefone} onChange={set("telefone")} placeholder="(00) 00000-0000" />
-        </Field>
-        <Field label="CPF">
-          <TextInput value={f.cpf} onChange={set("cpf")} placeholder="000.000.000-00" />
-        </Field>
-        <Field label="Placa">
-          <TextInput value={f.placa} onChange={set("placa")} placeholder="ABC1D23" style={{ textTransform: "uppercase" }} />
-        </Field>
-        <Field label="Origem">
-          <Select options={ORIGEM_OPTS} value={f.origem} onChange={set("origem")} />
-        </Field>
-        <Field label="Forma de pagamento">
-          <Select options={PAGAMENTO_OPTS} value={f.formaPagamento} onChange={set("formaPagamento")} />
-        </Field>
-        <Field label="Plano escolhido">
-          <TextInput value={f.planoEscolhido} onChange={set("planoEscolhido")} placeholder="Ex: Plano Completo" />
-        </Field>
-        <Field label="Adesão (R$)">
-          <TextInput value={f.adesao} onChange={set("adesao")} placeholder="0,00" inputMode="decimal" />
-        </Field>
-        <Field label="Consultoria (R$)">
-          <TextInput value={f.consultoria} onChange={set("consultoria")} placeholder="0,00" inputMode="decimal" />
-        </Field>
-        <Field label="Valor 1ª mensalidade (R$)">
-          <TextInput value={f.valorPrimeiraMensalidade} onChange={set("valorPrimeiraMensalidade")} placeholder="0,00" inputMode="decimal" />
-        </Field>
-        <Field label="Data do 1º boleto">
-          <TextInput type="date" value={f.dataPrimeiroBoleto} onChange={set("dataPrimeiroBoleto")} />
-        </Field>
-        <Field label="Brinde da semana">
-          <TextInput value={f.brindeDaSemana} onChange={set("brindeDaSemana")} placeholder="Ex: Kit automotivo" />
-        </Field>
-        <Field label="Observações" span={2}>
-          <textarea value={f.observacoes} onChange={set("observacoes")} rows={3} style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }} />
-        </Field>
-      </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
-        <button onClick={onCancel} style={btnGhost}>Cancelar</button>
-        <button
-          onClick={() => f.nomeCompleto.trim() && onSave(f)}
-          style={btnPrimary}
-        >
-          <Save size={15} /> Salvar associado
-        </button>
+function renderMetaModal(m){
+  const d=m.draft;
+  return `<div class="modal-overlay" data-action="overlayClose">
+    <div class="modal-box" data-stop="1">
+      <div class="modal-head"><h2 style="color:#fff;font-size:16px;font-weight:700;margin:0;">${d.id?"Editar meta":"Nova meta"}</h2>
+        <button class="icon-btn" style="color:${SILVER}" data-action="closeModal">${ic('x',20)}</button></div>
+      <div class="modal-body">
+        <div style="display:flex;flex-direction:column;gap:16px;">
+          <div class="grid-2col">
+            <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Tipo</span>
+              <select class="input" id="meta-tipo" data-kind="metafield" data-field="tipo">
+                <option value="mensal" ${d.tipo==='mensal'?'selected':''}>mensal</option>
+                <option value="anual" ${d.tipo==='anual'?'selected':''}>anual</option>
+              </select></label>
+            <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Período</span>
+              <input class="input" id="meta-periodo" type="${d.tipo==='anual'?'number':'month'}" placeholder="${d.tipo==='anual'?'2026':''}" value="${esc(d.periodo||'')}" data-kind="metafield" data-field="periodo" /></label>
+            ${metaNumField('metaFinanceira','Meta financeira (R$)',d)}
+            ${metaNumField('metaVendas','Meta de vendas',d)}
+            ${metaNumField('metaPlacas','Meta de placas',d)}
+            ${metaNumField('metaRecorrencia','Meta de recorrência (R$)',d)}
+            ${metaNumField('metaConsultoria','Meta de consultoria (R$)',d)}
+            ${metaNumField('metaAdesao','Meta de adesão (R$)',d)}
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:10px;">
+            <button class="btn-ghost" data-action="closeModal">Cancelar</button>
+            <button class="btn-primary" data-action="saveMeta">${ic('save',15)} Salvar meta</button>
+          </div>
+        </div>
       </div>
     </div>
-  );
+  </div>`;
+}
+function metaNumField(key,label,d){
+  return `<label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">${esc(label)}</span>
+    <input class="input" type="number" value="${esc(d[key]||'')}" data-kind="metafield" data-field="${key}" /></label>`;
 }
 
-/* ---------------------------------------------------------------
-   Formulário — Financeiro mensal
---------------------------------------------------------------- */
-const EMPTY_FIN = {
-  mes: "", adesao: "", premiacaoMensal: "", premiacaoSemanal: "", consultoria: "",
-  planoDeCarreira: "", recorrenciaPlacasAtivas: "", pagamentoIndicacoes: "",
-};
-
-function FinanceiroForm({ initial, onSave, onCancel }) {
-  const [f, setF] = useState(initial || EMPTY_FIN);
-  const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
-
-  const soma =
-    toNumber(f.adesao) + toNumber(f.premiacaoMensal) + toNumber(f.premiacaoSemanal) +
-    toNumber(f.consultoria) + toNumber(f.planoDeCarreira) + toNumber(f.recorrenciaPlacasAtivas) +
-    toNumber(f.pagamentoIndicacoes);
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-        <Field label="Mês" span={2}>
-          <TextInput type="month" value={f.mes} onChange={set("mes")} />
-        </Field>
-        <Field label="Adesão (R$)">
-          <TextInput value={f.adesao} onChange={set("adesao")} placeholder="0,00" inputMode="decimal" />
-        </Field>
-        <Field label="Consultoria (R$)">
-          <TextInput value={f.consultoria} onChange={set("consultoria")} placeholder="0,00" inputMode="decimal" />
-        </Field>
-        <Field label="Premiação mensal (R$)">
-          <TextInput value={f.premiacaoMensal} onChange={set("premiacaoMensal")} placeholder="0,00" inputMode="decimal" />
-        </Field>
-        <Field label="Premiação semanal (R$)">
-          <TextInput value={f.premiacaoSemanal} onChange={set("premiacaoSemanal")} placeholder="0,00" inputMode="decimal" />
-        </Field>
-        <Field label="Plano de carreira (R$)">
-          <TextInput value={f.planoDeCarreira} onChange={set("planoDeCarreira")} placeholder="0,00" inputMode="decimal" />
-        </Field>
-        <Field label="Recorrência placas ativas (R$)">
-          <TextInput value={f.recorrenciaPlacasAtivas} onChange={set("recorrenciaPlacasAtivas")} placeholder="0,00" inputMode="decimal" />
-        </Field>
-        <Field label="Pagamento de indicações (R$)" span={2}>
-          <TextInput value={f.pagamentoIndicacoes} onChange={set("pagamentoIndicacoes")} placeholder="0,00" inputMode="decimal" />
-        </Field>
-      </div>
-      <div style={{
-        background: ICE, border: `1px solid ${ICE_LINE}`, borderRadius: 10,
-        padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center",
-      }}>
-        <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#3A5A66" }}>
-          Soma final total
-        </span>
-        <span style={{ fontSize: 20, fontWeight: 800, color: BLACK }}>{formatBRL(soma)}</span>
-      </div>
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-        <button onClick={onCancel} style={btnGhost}>Cancelar</button>
-        <button
-          onClick={() => f.mes && onSave({ ...f, somaFinalTotal: soma })}
-          style={btnPrimary}
-        >
-          <Save size={15} /> Salvar mês
-        </button>
+function renderIndicacaoModal(m){
+  const d=m.draft;
+  const opts=lookupOptionsFor().associadoId;
+  const modoManual=!!m.modoManual;
+  return `<div class="modal-overlay" data-action="overlayClose">
+    <div class="modal-box wide" data-stop="1">
+      <div class="modal-head"><h2 style="color:#fff;font-size:16px;font-weight:700;margin:0;">${d.id?"Editar indicação":"Nova indicação"}</h2>
+        <button class="icon-btn" style="color:${SILVER}" data-action="closeModal">${ic('x',20)}</button></div>
+      <div class="modal-body">
+        <div style="display:flex;flex-direction:column;gap:16px;">
+          <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Associado que indicou</span>
+            <select class="input" data-kind="indfield" data-field="indicadorId">
+              <option value="">Selecionar…</option>
+              ${opts.map(o=>`<option value="${esc(o.id)}" ${d.indicadorId===o.id?'selected':''}>${esc(o.label)}</option>`).join("")}
+            </select></label>
+          <div>
+            <span class="field-label" style="margin-bottom:8px;">Novo associado indicado</span>
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+              <button class="btn-ghost ${!modoManual?'active':''}" data-action="indModo" data-val="0">Associado cadastrado</button>
+              <button class="btn-ghost ${modoManual?'active':''}" data-action="indModo" data-val="1">Cadastro manual</button>
+            </div>
+            ${!modoManual?`<select class="input" data-kind="indfield" data-field="indicadoId">
+              <option value="">Selecionar…</option>
+              ${opts.map(o=>`<option value="${esc(o.id)}" ${d.indicadoId===o.id?'selected':''}>${esc(o.label)}</option>`).join("")}
+            </select>`:`<div class="grid-2col">
+              <label style="grid-column:span 2;display:flex;flex-direction:column;gap:6px;"><span class="field-label">Nome do indicado</span>
+                <input class="input" value="${esc(d.indicadoNomeManual||'')}" data-kind="indfield" data-field="indicadoNomeManual" /></label>
+              <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Telefone (opcional)</span>
+                <input class="input" value="${esc(d.indicadoTelefoneManual||'')}" data-kind="indfield" data-field="indicadoTelefoneManual" /></label>
+            </div>`}
+          </div>
+          <div class="grid-2col">
+            <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Data da indicação</span>
+              <input class="input" type="date" value="${esc(d.data||'')}" data-kind="indfield" data-field="data" /></label>
+            <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Valor da comissão (R$)</span>
+              <input class="input" type="number" step="0.01" value="${esc(d.valorComissao||'')}" data-kind="indfield" data-field="valorComissao" /></label>
+            <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Status</span>
+              <select class="input" data-kind="indfield" data-field="status">
+                <option value="">Selecionar…</option>
+                ${INDIC_STATUS_OPTS.map(o=>`<option value="${esc(o)}" ${d.status===o?'selected':''}>${esc(o)}</option>`).join("")}
+              </select></label>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:10px;">
+            <button class="btn-ghost" data-action="closeModal">Cancelar</button>
+            <button class="btn-primary" data-action="saveIndicacao">${ic('save',15)} Salvar</button>
+          </div>
+        </div>
       </div>
     </div>
-  );
+  </div>`;
 }
 
-const btnPrimary = {
-  background: RED, color: "#fff", border: "none", borderRadius: 8,
-  padding: "10px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer",
-  display: "flex", alignItems: "center", gap: 8, letterSpacing: "0.02em",
-};
-const btnGhost = {
-  background: "#fff", color: BLACK, border: `1px solid ${SILVER}`, borderRadius: 8,
-  padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
-};
+/* ---------------- DASHBOARD ---------------- */
+function renderDashboard(){
+  const mes=UI.dashboardMes;
+  const vendas=DB.vendas, producaoEquipe=DB.producaoEquipe, indicacoes=DB.indicacoes, config=DB.config, consultores=DB.equipe, associados=DB.associados, metas=DB.metas;
+  const metrics=computePortfolioMetrics(vendas);
+  const finPeriodo=computeFinanceiroMes(vendas,producaoEquipe,indicacoes,config,mes,consultores);
+  const metaMes=metas.find(m=>m.tipo==="mensal"&&m.periodo===mes);
+  const percentualMeta=metaMes&&toNumber(metaMes.metaFinanceira)?Math.min(999,(finPeriodo.totalPrevisto/toNumber(metaMes.metaFinanceira))*100):null;
+  const placasRealizadasMes=vendas.filter(v=>(v.data||"").startsWith(mes)).length;
+  const metaPlacasPct=metaMes&&toNumber(metaMes.metaPlacas)?Math.min(100,(placasRealizadasMes/toNumber(metaMes.metaPlacas))*100):null;
+  const producaoEquipeMesAtual=producaoEquipe.filter(p=>p.competencia===mes).reduce((s,p)=>s+toNumber(p.placasVendidas),0);
+  const metaEquipePct=metaMes&&toNumber(metaMes.metaVendas)?Math.min(100,(producaoEquipeMesAtual/toNumber(metaMes.metaVendas))*100):null;
+  const datasCalendario=Object.values(CALENDARIO).map(c=>({...c,dataNf:dataDoMes(mes,c.nf),dataPagamento:dataDoMes(mes,c.pagamento)}));
+  const consultoriasAtivasValor=vendas.filter(v=>v.status==="Ativa"&&toNumber(v.consultoria)>0).reduce((s,v)=>s+toNumber(v.consultoria),0);
 
-/* ---------------------------------------------------------------
-   KPI Card
---------------------------------------------------------------- */
-function KpiCard({ icon: Icon, label, value, accent }) {
-  return (
-    <div style={{
-      background: "#fff", borderRadius: 12, padding: "18px 20px", flex: 1, minWidth: 200,
-      border: `1px solid ${SILVER}`, borderTop: `3px solid ${accent || RED}`,
-      display: "flex", flexDirection: "column", gap: 10,
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#6B7076" }}>
-        <Icon size={16} />
-        <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>{label}</span>
-      </div>
-      <span style={{ fontSize: 24, fontWeight: 800, color: BLACK }}>{value}</span>
+  const origemCount={};
+  associados.forEach(a=>{ const o=a.origem||"Outros"; origemCount[o]=(origemCount[o]||0)+1; });
+  const vendasPorOrigem=Object.entries(origemCount).map(([name,value])=>({name,value}));
+
+  const ultimosMeses=[]; { let m=mes; for(let i=0;i<12;i++){ ultimosMeses.unshift(m); m=prevMonth(m);} }
+  const series=ultimosMeses.map(m=>{
+    const fin=computeFinanceiroMes(vendas,producaoEquipe,indicacoes,config,m,consultores);
+    const vendasDoMesArr=vendasDoMes(vendas,m);
+    return {mes:monthLabel(m),receita:fin.totalPrevisto,vendasQtd:vendasDoMesArr.length,recorrencia:fin.recorrenciaPrevista,consultoria:fin.consultoriaPrevista,producaoPessoal:fin.producaoPessoal,producaoEquipe:fin.producaoEquipeTotal};
+  });
+
+  const hoje=new Date().toISOString().slice(0,10);
+  const vendasAtivasHoje=vendas.filter(v=>v.status==="Ativa"&&v.data);
+  const vendasComData=vendas.filter(v=>v.data);
+  const carteiraPorMes=ultimosMeses.map(m=>({mes:monthLabel(m),totalVendas:vendasComData.filter(v=>v.data<=`${m}-31`).length,placasAtivas:vendasAtivasHoje.filter(v=>v.data<=`${m}-31`).length}));
+
+  const n=series.length;
+  const ultimo=series[n-1], penultimo=series[n-2];
+  const insightReceita=ultimo&&penultimo?trendText(ultimo.receita,penultimo.receita):"Ainda não há dados suficientes.";
+  const insightVendas=ultimo&&penultimo?trendText(ultimo.vendasQtd,penultimo.vendasQtd):"Ainda não há dados suficientes.";
+  const ultimos3Consultoria=series.slice(-3).map(s=>s.consultoria);
+  const mediaConsultoria=ultimos3Consultoria.reduce((a,b)=>a+b,0)/(ultimos3Consultoria.length||1);
+  const varConsultoria=ultimos3Consultoria.length===3?Math.max(...ultimos3Consultoria)-Math.min(...ultimos3Consultoria):Infinity;
+  const insightConsultoria=ultimos3Consultoria.length<3?"Ainda não há dados suficientes.":(varConsultoria<=mediaConsultoria*0.1||mediaConsultoria===0?"A consultoria apresentou estabilidade nos últimos três meses.":trendText(ultimo.consultoria,penultimo.consultoria));
+  const insightCarteira=carteiraPorMes.length?`Carteira ativa cresceu de ${carteiraPorMes[0]?.placasAtivas||0} para ${carteiraPorMes[carteiraPorMes.length-1].placasAtivas} placas, enquanto o total de vendas foi de ${carteiraPorMes[0]?.totalVendas||0} para ${carteiraPorMes[carteiraPorMes.length-1].totalVendas}.`:"Ainda não há dados suficientes.";
+  const totalProducaoPessoal=series.reduce((s,x)=>s+x.producaoPessoal,0);
+  const totalProducaoEquipe=series.reduce((s,x)=>s+x.producaoEquipe,0);
+  const insightProducao=totalProducaoPessoal+totalProducaoEquipe>0?`A equipe responde por ${((totalProducaoEquipe/(totalProducaoPessoal+totalProducaoEquipe))*100).toFixed(0)}% da produção nos últimos ${n} meses.`:"Ainda não há dados suficientes.";
+  const topOrigem=[...vendasPorOrigem].sort((a,b)=>b.value-a.value)[0];
+  const totalOrigem=vendasPorOrigem.reduce((s,o)=>s+o.value,0);
+  const insightOrigem=topOrigem&&totalOrigem?`${topOrigem.name} é a principal origem, com ${((topOrigem.value/totalOrigem)*100).toFixed(0)}% dos associados.`:"Ainda não há dados suficientes.";
+
+  const planoAtual=computePlanoCarreiraDoMes(vendas,producaoEquipe,consultores,mes);
+  const idxNivel=PLANO_FAIXAS.findIndex(f=>f.nivel===planoAtual.faixa.nivel);
+  const proximoNivel=PLANO_FAIXAS[idxNivel+1];
+  const evolucaoPct=proximoNivel?Math.min(100,(planoAtual.producaoTotal/proximoNivel.min)*100):100;
+  const faltamProximoNivel=proximoNivel?Math.max(0,proximoNivel.min-planoAtual.producaoTotal):0;
+
+  const aniversariantesHoje=associados.filter(a=>a.dataNascimento&&daysUntilBirthday(a.dataNascimento)===0);
+  const boletosProximos=vendas.filter(v=>getPrimeiroBoleto(v)>=hoje&&getPrimeiroBoleto(v)<=addDays(hoje,7));
+  const diasNoMes=new Date(Number(mes.slice(0,4)),Number(mes.slice(5,7)),0).getDate();
+  const diaAtual=new Date().getDate();
+  const metaEmRisco=metaMes&&percentualMeta!==null&&(diaAtual/diasNoMes)*100-percentualMeta>15;
+  const pendencias=vendas.filter(v=>v.status==="Ativa Pendente");
+
+  const lembretes=vendas.flatMap(v=>[
+    {data:addDays(v.data,5),texto:`1º contato pós-venda — ${associadoNome(v.associadoId)} (placa ${v.veiculoPlaca||"—"})`},
+    {data:getPrimeiroBoleto(v),texto:`2º contato — confirmar 1º boleto de ${associadoNome(v.associadoId)} (placa ${v.veiculoPlaca||"—"})`},
+  ]).filter(l=>l.data);
+  const tarefasHoje=lembretes.filter(l=>l.data===hoje);
+  const lembretesProximos=lembretes.filter(l=>l.data>hoje&&l.data<=addDays(hoje,3));
+
+  const alertas=[];
+  if(aniversariantesHoje.length) alertas.push({tone:"green",texto:`${aniversariantesHoje.length} aniversariante(s) hoje: ${aniversariantesHoje.map(a=>a.nomeCompleto).join(", ")}`});
+  if(tarefasHoje.length) alertas.push({tone:"green",texto:`${tarefasHoje.length} tarefa(s) de pós-venda para hoje`});
+  if(lembretesProximos.length) alertas.push({tone:"amber",texto:`${lembretesProximos.length} lembrete(s) de pós-venda nos próximos 3 dias`});
+  if(boletosProximos.length) alertas.push({tone:"amber",texto:`${boletosProximos.length} primeiro(s) boleto(s) vencendo nos próximos 7 dias`});
+  datasCalendario.forEach(c=>{
+    if(c.dataPagamento>=hoje&&c.dataPagamento<=addDays(hoje,7)) alertas.push({tone:"gray",texto:`Pagamento de ${c.label} previsto para ${formatDateBR(c.dataPagamento)}`});
+    if(c.dataNf>=hoje&&c.dataNf<=addDays(hoje,3)) alertas.push({tone:"amber",texto:`Envio da nota fiscal de ${c.label} até ${formatDateBR(c.dataNf)}`});
+  });
+  if(!finPeriodo.consultoriaElegivel&&consultoriasAtivasValor>0) alertas.push({tone:"red",texto:"Consultoria especializada não elegível este mês — confira os requisitos no painel Financeiro"});
+  if(metrics.consultoriasAtivas<CONSULTORIA_PLACAS_ATIVAS_MINIMAS) alertas.push({tone:"amber",texto:`Faltam ${CONSULTORIA_PLACAS_ATIVAS_MINIMAS-metrics.consultoriasAtivas} placa(s) com consultoria ativa para elegibilidade da Consultoria Especializada`});
+  if(metrics.placasAtivas>=RECORRENCIA_BLOCO&&!finPeriodo.recorrenciaElegivel) alertas.push({tone:"amber",texto:`Faltam ${Math.max(0,RECORRENCIA_VENDAS_MINIMAS_MES-finPeriodo.placasVendidasMesAnterior)} venda(s) no mês anterior para elegibilidade da Recorrência`});
+  if(proximoNivel) alertas.push({tone:"gray",texto:`Faltam ${faltamProximoNivel} placa(s) para o próximo nível do Plano de Carreira (${proximoNivel.nivel})`});
+  if(metaEmRisco) alertas.push({tone:"red",texto:`Meta de ${monthLabel(mes)} em risco: ${percentualMeta.toFixed(0)}% concluído no dia ${diaAtual} de ${diasNoMes}`});
+  if(metrics.inadimplentes>0) alertas.push({tone:"red",texto:`${metrics.inadimplentes} venda(s) com status Inadimplente`});
+  if(pendencias.length) alertas.push({tone:"amber",texto:`${pendencias.length} venda(s) com status Ativa Pendente exigindo ação`});
+  alertas.push({tone:"gray",texto:"Lembrete mensal: verifique a emissão das notas fiscais do período."});
+  const ORDEM_TONE={red:0,amber:1,green:2,gray:3};
+  alertas.sort((a,b)=>ORDEM_TONE[a.tone]-ORDEM_TONE[b.tone]);
+
+  const html=`
+  <div style="display:flex;flex-direction:column;gap:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:12px;">
+      <div><h1 style="margin:0;font-size:22px;font-weight:800;">Dashboard Financeiro</h1>
+        <div style="font-size:13px;color:${MUTED};margin-top:4px;text-transform:capitalize;">${new Date(mes+"-01T00:00:00").toLocaleDateString("pt-BR",{month:"long",year:"numeric"})}</div></div>
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Período de análise</span>
+        <input class="input" type="month" value="${mes}" data-action="setDashboardMes" /></label>
     </div>
-  );
+
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+      ${kpiCard("cart","Adesões do mês",formatBRL(finPeriodo.adesoesMes),{sub:`${finPeriodo.totalAdesoesQtd} vendas`})}
+      ${kpiCard("users","Carteira",`${metrics.totalPlacasVendidas} Associados`,{sub:`${metrics.placasAtivas} Ativos`,subTone:"up"})}
+      ${kpiCard("usercog","Consultoria",formatBRL(finPeriodo.consultoriaPrevista),{sub:`${metrics.consultoriasAtivas} Consultorias Ativas`})}
+      ${kpiCard("dollar","Total previsto",formatBRL(finPeriodo.totalPrevisto),{accent:RED_DARK,glow:true})}
+    </div>
+
+    <div class="grid-2col" style="align-items:start;">
+      ${metaMes?`<div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:16px;">
+          <h3 style="margin:0;font-size:16px;font-weight:800;text-transform:capitalize;">Meta de ${new Date(mes+"-01T00:00:00").toLocaleDateString("pt-BR",{month:"long"})}</h3>
+          <span style="font-size:22px;font-weight:800;color:${RED}">${percentualMeta.toFixed(0)}%</span>
+        </div>
+        <div style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;font-size:12.5px;color:${MUTED};margin-bottom:6px;"><span>Barra financeira</span><span>${formatBRL(finPeriodo.totalPrevisto)} / ${formatBRL(toNumber(metaMes.metaFinanceira))}</span></div>
+          <div style="height:10px;background:${SURFACE_ALT};border-radius:999px;overflow:hidden;"><div style="width:${Math.min(100,percentualMeta)}%;height:100%;background:${RED};"></div></div>
+        </div>
+        ${metaPlacasPct!==null?`<div style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;font-size:12.5px;color:${MUTED};margin-bottom:6px;"><span>Barra de produção</span><span>${placasRealizadasMes} Placas / ${toNumber(metaMes.metaPlacas)} Placas</span></div>
+          <div style="height:10px;background:${SURFACE_ALT};border-radius:999px;overflow:hidden;"><div style="width:${metaPlacasPct}%;height:100%;background:#5B8DEF;"></div></div>
+        </div>`:""}
+        ${metaEquipePct!==null?`<div style="margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;font-size:12.5px;color:${MUTED};margin-bottom:6px;"><span>Meta de vendas da equipe</span><span>${producaoEquipeMesAtual} / ${toNumber(metaMes.metaVendas)} Placas · ${metaEquipePct.toFixed(0)}%</span></div>
+          <div style="height:10px;background:${SURFACE_ALT};border-radius:999px;overflow:hidden;"><div style="width:${metaEquipePct}%;height:100%;background:${GREEN};"></div></div>
+        </div>`:""}
+        <div style="display:flex;gap:8px;">
+          ${miniStat("Premiações",finPeriodo.premiacaoMensal+finPeriodo.premiacaoSemanal,dataDoMes(mes,CALENDARIO.premiacoes.pagamento))}
+          ${miniStat("Consultoria",finPeriodo.consultoriaPrevista,dataDoMes(mes,CALENDARIO.consultoria.pagamento))}
+          ${miniStat("Plano de carreira",finPeriodo.planoDeCarreiraPrevisto,dataDoMes(mes,CALENDARIO.planoDeCarreira.pagamento))}
+        </div>
+      </div>`:"<div></div>"}
+
+      <div class="card ancore-card" style="border:2px solid ${RED};box-shadow:0 4px 24px rgba(0,0,0,.35), 0 0 28px rgba(219,57,55,.18);">
+        <h3 class="section-title">Plano de carreira — mês atual</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:24px;align-items:center;margin-bottom:16px;">
+          <div>
+            <div style="font-size:12px;color:${MUTED}">${planoAtual.producaoTotal} placas em ${monthLabel(mes)} (pessoal ${planoAtual.producaoPessoal} + equipe ${planoAtual.producaoEquipeTotal})</div>
+            <div style="font-size:24px;font-weight:800;color:${RED};text-transform:uppercase;">${esc(planoAtual.faixa.nivel)}</div>
+            <div style="font-size:13px;color:${MUTED}">Premiação: <b style="color:${"var(--text)"}">${formatBRL(planoAtual.premiacaoLiberada)}</b></div>
+          </div>
+          ${proximoNivel?`<div style="margin-left:auto;text-align:right;">
+            <div style="font-size:11px;color:${MUTED};text-transform:uppercase;letter-spacing:.05em;">Próximo nível</div>
+            <div style="font-size:16px;font-weight:800;">${esc(proximoNivel.nivel)}</div>
+            <div style="font-size:13px;color:${MUTED}">Premiação: <b>${formatBRL(proximoNivel.premiacao)}</b></div>
+          </div>`:""}
+        </div>
+        ${proximoNivel?`<div style="display:flex;justify-content:space-between;font-size:12.5px;color:${MUTED};margin-bottom:6px;"><span>Evolução</span><span>${planoAtual.producaoTotal} / ${proximoNivel.min} Placas</span></div>
+          <div style="height:10px;background:${SURFACE_ALT};border-radius:999px;overflow:hidden;"><div style="width:${evolucaoPct}%;height:100%;background:${RED};"></div></div>
+          <div style="font-size:13px;margin-top:8px;">Faltam <b>${faltamProximoNivel}</b> placas para atingir o próximo nível.</div>`
+          :`<div style="font-size:13px;color:${MUTED}">Nível máximo do Plano de Carreira já atingido.</div>`}
+      </div>
+
+      ${sectionCard("Alertas inteligentes",`<div style="display:flex;flex-direction:column;gap:8px;">${alertas.map(a=>`
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:${SURFACE_ALT};border-radius:8px;font-size:13px;">
+          ${badge(a.tone==='red'?'Ação':a.tone==='amber'?'Atenção':a.tone==='green'?'Hoje':'Info',a.tone)}<span>${esc(a.texto)}</span>
+        </div>`).join("")}</div>`)}
+
+      ${sectionCard("Tarefas do dia", tarefasHoje.length===0?`<div style="color:${MUTED};font-size:13px;padding:10px 0;">Nenhuma tarefa de pós-venda para hoje.</div>`:
+        `<div style="display:flex;flex-direction:column;gap:8px;">${tarefasHoje.map(l=>`
+          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:${SURFACE_ALT};border-radius:8px;font-size:13px;">${ic('clock',14,RED)}<span>${esc(l.texto)}</span></div>`).join("")}</div>`)}
+    </div>
+
+    <div class="grid-2col">
+      ${sectionCard("Receita mensal",chartCanvas("chartReceita"),null,insightReceita)}
+      ${sectionCard("Vendas por mês",chartCanvas("chartVendas"),null,insightVendas)}
+      ${sectionCard("Evolução da consultoria",chartCanvas("chartConsultoria"),null,insightConsultoria)}
+      ${sectionCard("Evolução da carteira",chartCanvas("chartCarteira"),null,insightCarteira)}
+      ${sectionCard("Produção pessoal x equipe",chartCanvas("chartProducao"),null,insightProducao)}
+      ${sectionCard("Vendas por origem",chartCanvas("chartOrigem"),null,insightOrigem)}
+    </div>
+  </div>`;
+
+  DB._dashboardData={series,carteiraPorMes,vendasPorOrigem};
+  return html;
+}
+function miniStat(label,valor,data){
+  return `<div style="flex:1;background:${SURFACE_ALT};border-radius:8px;padding:10px 12px;min-width:0;">
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:${MUTED};margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(label)}</div>
+    <div style="font-size:14.5px;font-weight:800;">${formatBRL(valor)}</div>
+    <div style="font-size:10.5px;color:${MUTED};margin-top:2px;">Previsto: ${formatDateBR(data)}</div>
+  </div>`;
+}
+function chartCanvas(id){ return `<div style="width:100%;height:240px;"><canvas id="${id}"></canvas></div>`; }
+
+const CHART_INSTANCES={};
+function destroyChart(id){ if(CHART_INSTANCES[id]){ CHART_INSTANCES[id].destroy(); delete CHART_INSTANCES[id]; } }
+function drawDashboardCharts(){
+  if(!DB._dashboardData) return;
+  const {series,carteiraPorMes,vendasPorOrigem}=DB._dashboardData;
+  const muted=MUTED, silver=SILVER;
+  const commonScales={x:{ticks:{color:muted,font:{size:11}},grid:{display:false}},y:{ticks:{color:muted,font:{size:10}},grid:{color:"#26272C"}}};
+
+  ["chartReceita","chartVendas","chartConsultoria","chartCarteira","chartProducao","chartOrigem"].forEach(destroyChart);
+
+  const cReceita=document.getElementById("chartReceita");
+  if(cReceita) CHART_INSTANCES.chartReceita=new Chart(cReceita,{type:"bar",data:{labels:series.map(s=>s.mes),datasets:[{data:series.map(s=>s.receita),backgroundColor:RED,borderRadius:4}]},options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:(ctx)=>formatBRL(ctx.parsed.y)}}},scales:commonScales,responsive:true,maintainAspectRatio:false}});
+
+  const cVendas=document.getElementById("chartVendas");
+  if(cVendas) CHART_INSTANCES.chartVendas=new Chart(cVendas,{type:"bar",data:{labels:series.map(s=>s.mes),datasets:[{data:series.map(s=>s.vendasQtd),backgroundColor:"#5B8DEF",borderRadius:4}]},options:{plugins:{legend:{display:false}},scales:commonScales,responsive:true,maintainAspectRatio:false}});
+
+  const cCons=document.getElementById("chartConsultoria");
+  if(cCons) CHART_INSTANCES.chartConsultoria=new Chart(cCons,{type:"line",data:{labels:series.map(s=>s.mes),datasets:[{data:series.map(s=>s.consultoria),borderColor:GREEN,backgroundColor:GREEN,tension:.3,pointRadius:0,borderWidth:2.5}]},options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:(ctx)=>formatBRL(ctx.parsed.y)}}},scales:commonScales,responsive:true,maintainAspectRatio:false}});
+
+  const cCart=document.getElementById("chartCarteira");
+  if(cCart) CHART_INSTANCES.chartCarteira=new Chart(cCart,{type:"line",data:{labels:carteiraPorMes.map(s=>s.mes),datasets:[
+    {label:"Total de vendas",data:carteiraPorMes.map(s=>s.totalVendas),borderColor:"#5B8DEF",backgroundColor:"#5B8DEF",tension:.3,pointRadius:0,borderWidth:2.5},
+    {label:"Placas ativas",data:carteiraPorMes.map(s=>s.placasAtivas),borderColor:RED,backgroundColor:RED,tension:.3,pointRadius:0,borderWidth:2.5},
+  ]},options:{plugins:{legend:{labels:{color:muted,font:{size:12}}}},scales:commonScales,responsive:true,maintainAspectRatio:false}});
+
+  const cProd=document.getElementById("chartProducao");
+  if(cProd) CHART_INSTANCES.chartProducao=new Chart(cProd,{type:"bar",data:{labels:series.map(s=>s.mes),datasets:[
+    {label:"Pessoal",data:series.map(s=>s.producaoPessoal),backgroundColor:RED,borderRadius:4},
+    {label:"Equipe",data:series.map(s=>s.producaoEquipe),backgroundColor:"#5B8DEF",borderRadius:4},
+  ]},options:{plugins:{legend:{labels:{color:muted,font:{size:12}}}},scales:commonScales,responsive:true,maintainAspectRatio:false}});
+
+  const cOrig=document.getElementById("chartOrigem");
+  if(cOrig){
+    if(vendasPorOrigem.length===0){ /* skip */ }
+    else CHART_INSTANCES.chartOrigem=new Chart(cOrig,{type:"pie",data:{labels:vendasPorOrigem.map(o=>o.name),datasets:[{data:vendasPorOrigem.map(o=>o.value),backgroundColor:PIE_COLORS}]},options:{plugins:{legend:{position:"bottom",labels:{color:muted,font:{size:12}}}},responsive:true,maintainAspectRatio:false}});
+  }
 }
 
-/* ---------------------------------------------------------------
-   App principal
---------------------------------------------------------------- */
-export default function App() {
-  const [tab, setTab] = useState("dashboard");
-  const [associados, setAssociados] = useState([]);
-  const [financeiro, setFinanceiro] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+/* ---------------- CARTEIRA ---------------- */
+function renderCarteira(){
+  const st=UI.carteira;
+  const filtered=DB.associados
+    .filter(a=>!st.origem||a.origem===st.origem)
+    .filter(a=>{ const s=st.search.trim().toLowerCase(); return !s||[a.nomeCompleto,a.cpf,a.telefone,a.email].some(v=>(v||"").toLowerCase().includes(s)); })
+    .sort((a,b)=>(a.nomeCompleto||"").localeCompare(b.nomeCompleto||""));
+  const placasCount=id=>DB.vendas.filter(v=>v.associadoId===id).length;
+  const columns=[
+    {key:"associado",label:"Associado",render:r=>`<div><div style="font-weight:700;font-size:13.5px;">${esc(r.nomeCompleto)}</div><div style="font-size:11.5px;color:${MUTED};margin-top:2px;">${esc(r.cpf||"—")}</div></div>`},
+    {key:"contato",label:"Contato",render:r=>`<div><div style="font-size:13px;">${esc(r.telefone||"—")}</div><div style="font-size:11.5px;color:${MUTED};margin-top:2px;">${esc(r.email||"—")}</div></div>`},
+    {key:"origem",label:"Origem",render:r=>esc(r.origem||"—")},
+    {key:"dataNascimento",label:"Aniversário",render:r=>formatDateBR(r.dataNascimento)},
+    {key:"placas",label:"Placas",render:r=>badge(`${placasCount(r.id)} placa${placasCount(r.id)===1?"":"s"}`,placasCount(r.id)>0?"green":"gray")},
+  ];
+  return `<div style="display:flex;flex-direction:column;gap:16px;">
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div style="display:flex;gap:10px;flex:1;flex-wrap:wrap;">
+        <div style="position:relative;flex:1;min-width:220px;max-width:340px;">
+          <span style="position:absolute;left:12px;top:11px;color:${MUTED}">${ic('search',15)}</span>
+          <input class="input" style="padding-left:34px;" id="carteira-search" placeholder="Nome, CPF, telefone, e-mail…" value="${esc(st.search)}" data-action="carteiraSearch" />
+        </div>
+        <select class="input" style="max-width:170px" data-action="carteiraOrigem">
+          <option value="">Selecionar…</option>
+          ${ORIGEM_OPTS.map(o=>`<option value="${esc(o)}" ${st.origem===o?'selected':''}>${esc(o)}</option>`).join("")}
+        </select>
+      </div>
+      <button class="btn-primary" data-action="novoAssociado">${ic('plus',15)} Novo associado</button>
+    </div>
+    ${dataTable("carteira",columns,filtered,{onEdit:true,onDelete:true,onRowClick:true,emptyText:"Nenhum associado encontrado."})}
+  </div>`;
+}
 
-  const [modalAssociado, setModalAssociado] = useState(null); // { mode: 'new'|'edit', data }
-  const [modalFin, setModalFin] = useState(null);
+/* ---------------- FICHA DO ASSOCIADO ---------------- */
+function renderFicha(associadoId){
+  const associado=DB.associados.find(a=>a.id===associadoId);
+  if(!associado){ return `<button class="btn-ghost" data-action="voltarCarteira">${ic('arrowLeft',15)} Voltar</button><div style="margin-top:20px;color:${MUTED}">Associado não encontrado.</div>`; }
+  const vendas=DB.vendas.filter(v=>v.associadoId===associadoId);
+  const indicacoes=DB.indicacoes;
+  const contatos=associado.contatos||[];
+  const documentos=associado.documentos||[];
+  const indicacoesFeitas=indicacoes.filter(i=>i.indicadorId===associado.id);
+  const quemIndicou=indicacoes.find(i=>i.indicadoId===associado.id);
+  const vendasLigadas=[...vendas].sort((a,b)=>(b.data||"").localeCompare(a.data||""));
+  const placasAtivas=vendas.filter(v=>v.status==="Ativa").length;
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const a = await window.storage.get(STORAGE_KEY_CARTEIRA);
-        if (a && a.value) setAssociados(JSON.parse(a.value));
-      } catch (e) { /* sem dados ainda */ }
-      try {
-        const f = await window.storage.get(STORAGE_KEY_FINANCEIRO);
-        if (f && f.value) setFinanceiro(JSON.parse(f.value));
-      } catch (e) { /* sem dados ainda */ }
-      setLoading(false);
-    })();
-  }, []);
+  const timeline=[
+    ...vendasLigadas.map(v=>({data:v.data,texto:`Venda registrada — placa ${v.veiculoPlaca||"—"} (${v.plano||"—"})`})),
+    ...vendasLigadas.map(v=>({data:getPrimeiroBoleto(v),texto:`1º boleto da placa ${v.veiculoPlaca||"—"}`})),
+    ...contatos.map(c=>({data:c.data,texto:`Contato: ${c.nota}`})),
+    ...indicacoesFeitas.map(i=>({data:i.data,texto:`Indicou ${nomeDoIndicado(i,associadoNome)}`})),
+  ].filter(t=>t.data).sort((a,b)=>(b.data||"").localeCompare(a.data||""));
 
-  const persistAssociados = useCallback(async (list) => {
-    setAssociados(list);
-    try { await window.storage.set(STORAGE_KEY_CARTEIRA, JSON.stringify(list)); }
-    catch (e) { console.error("Erro ao salvar carteira", e); }
-  }, []);
+  return `<div style="display:flex;flex-direction:column;gap:18px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <button class="btn-ghost" data-action="voltarCarteira">${ic('arrowLeft',15)} Voltar à carteira</button>
+      ${badge(`${placasAtivas} placa${placasAtivas===1?"":"s"} ativa${placasAtivas===1?"":"s"}`,placasAtivas>0?"green":"gray")}
+    </div>
+    <div class="card"><h2 style="margin:0 0 4px;font-size:21px;font-weight:800;">${esc(associado.nomeCompleto)}</h2>
+      <div style="color:${MUTED};font-size:13px;">${vendas.length} placa${vendas.length===1?"":"s"} no total · ${placasAtivas} ativa${placasAtivas===1?"":"s"}${quemIndicou?` · Indicado por ${esc(associadoNome(quemIndicou.indicadorId))}`:""}</div>
+    </div>
+    ${sectionCard("Dados pessoais",infoRows([
+      ["Telefone",associado.telefone],["E-mail",associado.email],["CPF",associado.cpf],["Origem",associado.origem],["Data de nascimento",formatDateBR(associado.dataNascimento)],
+    ]))}
+    ${sectionCard("Placas / vendas vinculadas", vendasLigadas.length===0?emptyNote("Nenhuma placa vendida para este associado ainda."):
+      `<div style="display:flex;flex-direction:column;gap:8px;">${vendasLigadas.map(v=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--ice,#12202B);border-radius:8px;font-size:13px;cursor:pointer;" data-action="editVendaFicha" data-id="${v.id}">
+          <div><div style="font-weight:700;">${esc(v.veiculoModelo||"Veículo")} · ${esc(v.veiculoPlaca||"—")}</div>
+          <div style="color:${MUTED};font-size:11.5px;">${formatDateBR(v.data)} · Plano ${esc(v.plano||"—")} · Adesão ${formatBRL(toNumber(v.valorAdesao))}</div></div>
+          ${badge(v.status||"—",statusTone(v.status))}
+        </div>`).join("")}</div>`,
+      `<button class="btn-ghost" data-action="novaVendaFicha" data-id="${associadoId}">${ic('plus',14)} Nova venda</button>`)}
+    ${sectionCard("Indicações realizadas", indicacoesFeitas.length===0?emptyNote("Este associado ainda não indicou ninguém."):
+      `<div style="display:flex;flex-direction:column;gap:8px;">${indicacoesFeitas.map(i=>`
+        <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--ice,#12202B);border-radius:8px;font-size:13px;">
+          <span>${esc(nomeDoIndicado(i,associadoNome))}</span><span>${formatDateBR(i.data)}</span>${badge(i.status,statusTone(i.status))}
+        </div>`).join("")}</div>`)}
+    ${sectionCard("Documentos do associado",documentosFieldHTML("Documentos pessoais (independem da quantidade de veículos)","assocDocs-"+associadoId,documentos,["CNH","Comprovante de residência","CPF","Documento de identidade","Outros"]))}
+    ${sectionCard("Histórico de contatos", `
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <input class="input" id="fichaNovaNota" placeholder="Registrar novo contato ou observação…" value="${esc(UI.fichaNovaNota)}" data-action="fichaNotaInput" />
+        <button class="btn-ghost" data-action="fichaAddContato" data-id="${associadoId}">${ic('plus',14)} Registrar</button>
+      </div>
+      ${contatos.length===0?emptyNote("Nenhum contato registrado."):`<div style="display:flex;flex-direction:column;gap:6px;">${contatos.map(c=>`<div style="font-size:13px;">${formatDateBR(c.data)} — ${esc(c.nota)}</div>`).join("")}</div>`}
+    `)}
+    ${sectionCard("Linha do tempo", `<div style="display:flex;flex-direction:column;gap:10px;">${timeline.map(t=>`
+      <div style="display:flex;gap:12px;align-items:flex-start;">${ic('clock',13,RED)}<div style="font-size:13px;"><b>${formatDateBR(t.data)}</b> — ${esc(t.texto)}</div></div>`).join("")}</div>`)}
+    ${associado.observacoes?sectionCard("Observações",`<div style="font-size:13.5px;white-space:pre-wrap;">${esc(associado.observacoes)}</div>`):""}
+  </div>`;
+}
+function infoRows(rows){
+  return `<div style="display:flex;flex-direction:column;gap:9px;">${rows.map(([label,value])=>`
+    <div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:${MUTED}">${esc(label)}</span><span style="font-weight:700;">${esc(value||"—")}</span></div>`).join("")}</div>`;
+}
+function emptyNote(text){ return `<div style="color:${MUTED};font-size:13px;padding:10px 0;">${esc(text)}</div>`; }
 
-  const persistFinanceiro = useCallback(async (list) => {
-    setFinanceiro(list);
-    try { await window.storage.set(STORAGE_KEY_FINANCEIRO, JSON.stringify(list)); }
-    catch (e) { console.error("Erro ao salvar financeiro", e); }
-  }, []);
+/* ---------------- FINANCEIRO ---------------- */
+function renderFinanceiro(){
+  const mes=UI.financeiroMes;
+  const {vendas,producaoEquipe,indicacoes,config,equipe:consultores,despesas}=DB;
+  const metrics=computePortfolioMetrics(vendas);
+  const fin=computeFinanceiroMes(vendas,producaoEquipe,indicacoes,config,mes,consultores);
+  const despesaMes=despesas.find(d=>d.competencia===mes);
+  const saldoFinal=fin.totalPrevisto-toNumber(despesaMes&&despesaMes.despesas)+toNumber(despesaMes&&despesaMes.outrasReceitas);
+  const despesasOrdenadas=[...despesas].sort((a,b)=>(b.competencia||"").localeCompare(a.competencia||""));
+  const columnsDespesas=[
+    {key:"competencia",label:"Competência",render:r=>`<b>${monthLabel(r.competencia)}</b>`},
+    {key:"despesas",label:"Despesas",render:r=>formatBRL(toNumber(r.despesas))},
+    {key:"outrasReceitas",label:"Outras receitas",render:r=>formatBRL(toNumber(r.outrasReceitas))},
+    {key:"observacoes",label:"Observações",render:r=>esc(r.observacoes||"")},
+  ];
+  function linha(label,valor,badgeHtml){
+    return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <span style="color:${MUTED};display:flex;align-items:center;gap:8px;">${esc(label)} ${badgeHtml||""}</span><b>${formatBRL(valor)}</b></div>`;
+  }
+  return `<div style="display:flex;flex-direction:column;gap:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+      <div style="font-size:12.5px;color:${MUTED};">Tudo calculado automaticamente a partir de Vendas, Equipe e Indicações — nenhum lançamento manual necessário.</div>
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Competência</span><input class="input" type="month" value="${mes}" data-action="setFinanceiroMes" /></label>
+    </div>
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+      <div class="kpi ancore-card" style="flex:2;border:1px solid ${RED};box-shadow:0 4px 24px rgba(0,0,0,.35), 0 0 24px rgba(219,57,55,.25);">
+        <div class="lbl">${ic('dollar',15)}<span>Total previsto do mês</span></div>
+        <div class="val" style="margin-bottom:10px;">${formatBRL(fin.totalPrevisto)}</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:${MUTED};margin-bottom:6px;">Composição</div>
+        <div style="display:flex;flex-direction:column;gap:3px;font-size:12.5px;">
+          <div style="display:flex;justify-content:space-between;"><span style="color:${MUTED}">Adesões</span><span>${formatBRL(fin.adesoesMes)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:${MUTED}">Premiações</span><span>${formatBRL(fin.premiacaoMensal+fin.premiacaoSemanal)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:${MUTED}">Consultoria</span><span>${formatBRL(fin.consultoriaPrevista)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:${MUTED}">Plano de carreira</span><span>${formatBRL(fin.planoDeCarreiraPrevisto)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:${MUTED}">Recorrência</span><span>${formatBRL(fin.recorrenciaPrevista)}</span></div>
+          <div style="display:flex;justify-content:space-between;"><span style="color:${MUTED}">Indicações</span><span>-${formatBRL(fin.indicacoesPagas)}</span></div>
+        </div>
+      </div>
+      ${kpiCard("cart","Adesões do mês",formatBRL(fin.adesoesMes),{sub:`${fin.totalAdesoesQtd} adesões`})}
+      <div class="kpi" style="border-top:3px solid ${RED}">
+        <div class="lbl">${ic('wallet',15)}<span>Ticket médio</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;"><span style="color:${MUTED}">Do mês</span><b>${formatBRL(fin.ticketMedio)}</b></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:${MUTED}">Geral</span><b>${formatBRL(metrics.ticketMedioGeral)}</b></div>
+      </div>
+      <div class="kpi" style="border-top:3px solid ${RED}">
+        <div class="lbl">${ic('usercog',15)}<span>Consultoria</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;"><span style="color:${MUTED}">Prevista</span><b>${formatBRL(fin.consultoriaPrevista)}</b></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;"><span style="color:${MUTED}">Ativas</span><b>${fin.consultoriasAtivasTotal}</b></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;"><span style="color:${MUTED}">Valor médio</span><b>${formatBRL(fin.consultoriasAtivasTotal?fin.consultoriaPrevista/fin.consultoriasAtivasTotal:0)}</b></div>
+      </div>
+      ${kpiCard("share","Indicações pagas",formatBRL(fin.indicacoesPagas),{accent:AMBER})}
+    </div>
+    ${sectionCard("Premiações e receitas variáveis",`<div style="display:flex;flex-direction:column;gap:8px;font-size:13.5px;">
+      ${linha(`Premiação mensal (produção de ${monthLabel(fin.mesAnterior)}: ${fin.placasVendidasMesAnterior} placas)`,fin.premiacaoMensal)}
+      ${linha("Premiação semanal (mês anterior)",fin.premiacaoSemanal)}
+      ${linha("Consultoria prevista",fin.consultoriaPrevista,fin.consultoriaElegivel?badge("Elegível","green"):badge("Bloqueada","red"))}
+      ${linha(`Plano de carreira (${fin.faixa.nivel})`,fin.planoDeCarreiraPrevisto,(fin.faixa.premiacao>0&&!fin.requisitoEquipeOk)?badge("Bloqueada — equipe","red"):"")}
+      ${linha("Recorrência",fin.recorrenciaPrevista,fin.recorrenciaElegivel?badge("Elegível","green"):badge("Bloqueada","red"))}
+      <div style="border-top:1px solid ${SILVER};margin-top:4px;padding-top:8px;display:flex;justify-content:space-between;font-weight:800;font-size:15px;">
+        <span>Total Previsto (premiações e variáveis)</span><span style="color:${RED_DARK}">${formatBRL(fin.premiacaoMensal+fin.premiacaoSemanal+fin.consultoriaPrevista+fin.planoDeCarreiraPrevisto+fin.recorrenciaPrevista)}</span>
+      </div></div>`)}
+    ${sectionCard(`Calendário financeiro de ${monthLabel(mes)}`,`<div class="grid-2col">${Object.values(CALENDARIO).map(c=>`
+      <div style="padding:10px 14px;background:${SURFACE_ALT};border-radius:8px;font-size:13px;">
+        <div style="font-weight:700;margin-bottom:4px;">${esc(c.label)}</div>
+        <div style="color:${MUTED};font-size:12px;">NF até ${formatDateBR(dataDoMes(mes,c.nf))} · Pagamento em ${formatDateBR(dataDoMes(mes,c.pagamento))}</div>
+      </div>`).join("")}</div>`)}
+    ${(metrics.placasAtivas>=RECORRENCIA_BLOCO&&!fin.recorrenciaElegivel)?`<div style="background:rgba(240,180,41,.12);border:1px solid rgba(240,180,41,.35);border-radius:10px;padding:12px 16px;font-size:13px;display:flex;gap:10px;align-items:flex-start;">${ic('lock',16,AMBER)}<div>Recorrência bloqueada em ${monthLabel(mes)}: foram ${fin.placasVendidasMesAnterior} vendas pessoais em ${monthLabel(fin.mesAnterior)}, e o mínimo exigido é ${RECORRENCIA_VENDAS_MINIMAS_MES}.</div></div>`:""}
+    ${(fin.faixa.premiacao>0&&!fin.requisitoEquipeOk)?`<div style="background:rgba(240,180,41,.12);border:1px solid rgba(240,180,41,.35);border-radius:10px;padding:12px 16px;font-size:13px;display:flex;gap:10px;align-items:flex-start;">${ic('lock',16,AMBER)}<div>Premiação do Plano de Carreira (${fin.faixa.nivel}) bloqueada: os 2 consultores selecionados na aba Equipe precisam de ${EQUIPE_VENDAS_MIN_POR_PESSOA}+ vendas cada em ${monthLabel(fin.mesAnterior)} — hoje ${fin.elegiveisEquipe} de 2 cumprem o requisito.</div></div>`:""}
+    ${sectionCard("Despesas e outras receitas (único lançamento manual)",`
+      <div style="display:flex;justify-content:space-between;margin-bottom:14px;font-size:13.5px;">
+        <span style="color:${MUTED}">Saldo final estimado de ${monthLabel(mes)} (previsto − despesas + outras receitas)</span>
+        <b style="color:${saldoFinal>=0?GREEN:RED_DARK}">${formatBRL(saldoFinal)}</b>
+      </div>
+      ${dataTable("despesas",columnsDespesas,despesasOrdenadas,{onEdit:true,onDelete:true,emptyText:"Nenhuma despesa lançada."})}
+    `,`<button class="btn-ghost" data-action="novaDespesa">${ic('plus',14)} Lançar mês</button>`)}
+  </div>`;
+}
 
-  const saveAssociado = (data) => {
-    if (data.id) {
-      persistAssociados(associados.map((a) => (a.id === data.id ? data : a)));
-    } else {
-      persistAssociados([{ ...data, id: uid() }, ...associados]);
-    }
-    setModalAssociado(null);
-  };
-  const deleteAssociado = (id) => {
-    if (confirm("Remover este associado da carteira?")) {
-      persistAssociados(associados.filter((a) => a.id !== id));
-    }
-  };
+/* ---------------- VENDAS ---------------- */
+function renderVendas(){
+  const st=UI.vendas;
+  const associadoOrigem=id=>{ const a=DB.associados.find(x=>x.id===id); return a?(a.origem||""):""; };
+  const s=st.search.trim().toLowerCase();
+  const filtered=DB.vendas
+    .filter(v=>!st.status||v.status===st.status)
+    .filter(v=>!st.origem||associadoOrigem(v.associadoId)===st.origem)
+    .filter(v=>!st.plano||v.plano===st.plano)
+    .filter(v=>!st.inicio||(v.data||"")>=st.inicio)
+    .filter(v=>!st.fim||(v.data||"")<=st.fim)
+    .filter(v=>!s||[associadoNome(v.associadoId),v.veiculoPlaca,v.veiculoModelo,v.plano].some(x=>(x||"").toLowerCase().includes(s)))
+    .sort((a,b)=>(b.data||"").localeCompare(a.data||""));
+  const metrics=computePortfolioMetrics(DB.vendas);
+  const columns=[
+    {key:"data",label:"Data",render:r=>formatDateBR(r.data)},
+    {key:"associado",label:"Associado",render:r=>`<button class="btn-ghost" style="background:none;border:none;padding:0;color:${RED_DARK};font-weight:700;text-decoration:underline;font-size:13px;" data-action="abrirAssociadoDaVenda" data-id="${r.associadoId}">${esc(associadoNome(r.associadoId))}</button>`},
+    {key:"veiculo",label:"Veículo",render:r=>`<div><div>${esc(r.veiculoModelo||"—")}</div><div style="font-size:11.5px;color:${MUTED};margin-top:2px;">${esc(r.veiculoPlaca||"—")}</div></div>`},
+    {key:"plano",label:"Plano",render:r=>esc(r.plano||"")},
+    {key:"valorAdesao",label:"Adesão",render:r=>formatBRL(toNumber(r.valorAdesao))},
+    {key:"consultoria",label:"Consultoria",render:r=>formatBRL(toNumber(r.consultoria))},
+    {key:"mensalidade",label:"Mensalidade",render:r=>`<div><div>${formatBRL(toNumber(r.primeiraMensalidade))}</div><div style="font-size:11.5px;color:${MUTED};margin-top:2px;">${formatDateBR(getPrimeiroBoleto(r))}</div></div>`},
+    {key:"status",label:"Status",render:r=>badge(r.status||"—",statusTone(r.status))},
+  ];
+  return `<div style="display:flex;flex-direction:column;gap:16px;">
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+      ${kpiCard("car","Total de placas vendidas",metrics.totalPlacasVendidas)}
+      ${kpiCard("check" in ICONS?"check":"car","Total de placas ativas",metrics.placasAtivas,{accent:RED_DARK})}
+    </div>
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div style="display:flex;gap:10px;flex:1;flex-wrap:wrap;">
+        <div style="position:relative;flex:1;min-width:220px;max-width:320px;">
+          <span style="position:absolute;left:12px;top:11px;color:${MUTED}">${ic('search',15)}</span>
+          <input class="input" style="padding-left:34px;" placeholder="Associado, placa, modelo, plano…" value="${esc(st.search)}" data-action="vendasSearch" />
+        </div>
+        <select class="input" style="max-width:180px" data-action="vendasStatus">
+          <option value="">Selecionar…</option>
+          ${VENDA_STATUS_OPTS.map(o=>`<option value="${esc(o)}" ${st.status===o?'selected':''}>${esc(o)}</option>`).join("")}
+        </select>
+        <button class="btn-ghost" data-action="toggleFiltrosVendas">${ic('filter',14)} Filtros avançados</button>
+      </div>
+      <button class="btn-primary" data-action="novaVenda">${ic('plus',15)} Nova venda</button>
+    </div>
+    ${st.showFiltros?`<div class="grid-3col card" style="padding:16px;">
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Origem</span>
+        <select class="input" data-action="vendasOrigem"><option value="">Selecionar…</option>${ORIGEM_OPTS.map(o=>`<option value="${esc(o)}" ${st.origem===o?'selected':''}>${esc(o)}</option>`).join("")}</select></label>
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Plano</span>
+        <select class="input" data-action="vendasPlano"><option value="">Selecionar…</option>${PLANO_OPTS.map(o=>`<option value="${esc(o)}" ${st.plano===o?'selected':''}>${esc(o)}</option>`).join("")}</select></label>
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Data de</span><input class="input" type="date" value="${st.inicio}" data-action="vendasInicio" /></label>
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Data até</span><input class="input" type="date" value="${st.fim}" data-action="vendasFim" /></label>
+    </div>`:""}
+    <div style="max-height:70vh;overflow-y:auto;border-radius:12px;">
+      ${dataTable("vendas",columns,filtered,{onEdit:true,onDelete:true,sortable:true,emptyText:"Nenhuma venda encontrada."})}
+    </div>
+  </div>`;
+}
 
-  const saveFin = (data) => {
-    if (data.id) {
-      persistFinanceiro(financeiro.map((f) => (f.id === data.id ? data : f)));
-    } else {
-      const exists = financeiro.some((f) => f.mes === data.mes);
-      if (exists) {
-        persistFinanceiro(financeiro.map((f) => (f.mes === data.mes ? { ...data, id: f.id } : f)));
-      } else {
-        persistFinanceiro([{ ...data, id: uid() }, ...financeiro]);
-      }
-    }
-    setModalFin(null);
-  };
-  const deleteFin = (id) => {
-    if (confirm("Remover este mês do financeiro?")) {
-      persistFinanceiro(financeiro.filter((f) => f.id !== id));
-    }
-  };
+/* ---------------- METAS ---------------- */
+function renderMetas(){
+  const sorted=[...DB.metas].sort((a,b)=>(b.periodo||"").localeCompare(a.periodo||""));
+  const columns=[
+    {key:"periodo",label:"Período",render:r=>`<b>${r.tipo==="mensal"?monthLabel(r.periodo):esc(r.periodo)}</b>`},
+    {key:"tipo",label:"Tipo",render:r=>esc(r.tipo)},
+    {key:"metaFinanceira",label:"Meta financeira",render:r=>formatBRL(toNumber(r.metaFinanceira))},
+    {key:"metaVendas",label:"Meta de vendas",render:r=>esc(r.metaVendas||"")},
+    {key:"metaPlacas",label:"Meta de placas",render:r=>esc(r.metaPlacas||"")},
+    {key:"progresso",label:"Progresso",render:r=>{
+      if(r.tipo!=="mensal") return "—";
+      const fin=computeFinanceiroMes(DB.vendas,DB.producaoEquipe,DB.indicacoes,DB.config,r.periodo,DB.equipe);
+      const pct=toNumber(r.metaFinanceira)?(fin.totalPrevisto/toNumber(r.metaFinanceira))*100:0;
+      return `${pct.toFixed(0)}%`;
+    }},
+  ];
+  return `<div style="display:flex;flex-direction:column;gap:16px;">
+    <div style="display:flex;justify-content:flex-end;"><button class="btn-primary" data-action="novaMeta">${ic('plus',15)} Nova meta</button></div>
+    ${dataTable("metas",columns,sorted,{onEdit:true,onDelete:true,emptyText:"Nenhuma meta cadastrada."})}
+  </div>`;
+}
 
-  const filteredAssociados = useMemo(() => {
-    const s = search.trim().toLowerCase();
-    const list = !s
-      ? associados
-      : associados.filter((a) =>
-          [a.nomeCompleto, a.cpf, a.placa, a.telefone].some((v) => (v || "").toLowerCase().includes(s))
-        );
-    return [...list].sort((a, b) => (b.dataContrato || "").localeCompare(a.dataContrato || ""));
-  }, [associados, search]);
+/* ---------------- RECORRÊNCIA ---------------- */
+function renderRecorrencia(){
+  const mes=UI.recorrenciaMes;
+  const fin=computeFinanceiroMes(DB.vendas,DB.producaoEquipe,DB.indicacoes,DB.config,mes,DB.equipe);
+  const metrics=computePortfolioMetrics(DB.vendas);
+  const ativas=DB.vendas.filter(v=>v.status==="Ativa");
+  const columns=[
+    {key:"associado",label:"Associado",render:r=>`<b>${esc(associadoNome(r.associadoId))}</b>`},
+    {key:"veiculoPlaca",label:"Placa",render:r=>esc(r.veiculoPlaca||"")},
+    {key:"status",label:"Status",render:r=>badge(r.status,statusTone(r.status))},
+    {key:"primeiroBoleto",label:"Próximo boleto",render:r=>formatDateBR(getPrimeiroBoleto(r))},
+    {key:"data",label:"Tempo de carteira",render:r=>`${monthsBetween(r.data)} meses`},
+  ];
+  return `<div style="display:flex;flex-direction:column;gap:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        ${kpiCard("repeat","Recorrência prevista",formatBRL(fin.recorrenciaPrevista))}
+        ${kpiCard("car","Placas ativas",metrics.placasAtivas,{accent:RED_DARK})}
+        ${kpiCard("alert","Cancelamentos",metrics.cancelados,{accent:AMBER})}
+      </div>
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Competência</span><input class="input" type="month" value="${mes}" data-action="setRecorrenciaMes" /></label>
+    </div>
+    ${sectionCard("Elegibilidade de recorrência (regra Ancore)",`<div style="display:flex;flex-direction:column;gap:10px;font-size:13.5px;">
+      <div>Vendas pessoais em ${monthLabel(fin.mesAnterior)}: <b>${fin.placasVendidasMesAnterior}</b> (mínimo exigido: ${RECORRENCIA_VENDAS_MINIMAS_MES})</div>
+      <div>Placas ativas em ${monthLabel(fin.mesAnterior)} (boletos pagos): <b>${fin.placasAtivasMesAnterior}</b> (a cada ${RECORRENCIA_BLOCO} → ${formatBRL(RECORRENCIA_VALOR_POR_BLOCO)})</div>
+      <div style="display:flex;align-items:center;gap:8px;">Elegível em ${monthLabel(mes)}: ${fin.recorrenciaElegivel?badge("Sim","green"):badge("Não","red")}</div>
+      <div>Valor previsto de recorrência: <b style="color:${RED_DARK}">${formatBRL(fin.recorrenciaPrevista)}</b> (${fin.recorrenciaBlocos} bloco${fin.recorrenciaBlocos===1?"":"s"} de ${RECORRENCIA_BLOCO})</div>
+    </div>`)}
+    ${dataTable("recorrencia",columns,ativas,{emptyText:"Nenhuma placa ativa no momento."})}
+  </div>`;
+}
 
-  const sortedFin = useMemo(
-    () => [...financeiro].sort((a, b) => (b.mes || "").localeCompare(a.mes || "")),
-    [financeiro]
-  );
+/* ---------------- ANIVERSARIANTES ---------------- */
+function renderAniversariantes(){
+  const st=UI.aniversariantes;
+  const withBday=DB.associados.filter(a=>a.dataNascimento).map(a=>({...a,_dias:daysUntilBirthday(a.dataNascimento)})).sort((a,b)=>a._dias-b._dias).filter(a=>!st.onlyWeek||a._dias<=7);
+  return `<div style="display:flex;flex-direction:column;gap:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <div style="font-size:13px;color:${MUTED}">${withBday.length} aniversariante${withBday.length===1?"":"s"}</div>
+      <button class="btn-ghost ${st.onlyWeek?'active':''}" data-action="toggleOnlyWeek">${ic('gift',15)} Só esta semana</button>
+    </div>
+    ${withBday.length===0?`<div style="color:${MUTED};font-size:13px;padding:30px;text-align:center;background:${SURFACE};border-radius:12px;border:1px solid ${SILVER};">Nenhum aniversariante encontrado.</div>`:
+    `<div style="display:flex;flex-direction:column;gap:8px;">${withBday.map(a=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;background:${SURFACE};border:1px solid ${SILVER};border-radius:10px;padding:12px 16px;">
+        <div><div style="font-weight:700;font-size:14px;">${esc(a.nomeCompleto)}</div>
+        <div style="font-size:12px;color:${MUTED}">${formatDateBR(a.dataNascimento)} · faz ${ageFromDate(a.dataNascimento)+1} anos</div></div>
+        <div style="display:flex;align-items:center;gap:14px;">
+          ${badge(a._dias===0?"Hoje!":`em ${a._dias} dia${a._dias===1?"":"s"}`,a._dias<=7?"green":"gray")}
+          ${a.telefone?`<a class="btn-ghost" href="${waLink(a.telefone)}" target="_blank" rel="noreferrer">${ic('message',14)} WhatsApp</a>`:""}
+        </div>
+      </div>`).join("")}</div>`}
+  </div>`;
+}
 
-  const totalAdesoesCarteira = associados.reduce((s, a) => s + toNumber(a.adesao), 0);
-  const totalFinAcumulado = financeiro.reduce((s, f) => s + toNumber(f.somaFinalTotal), 0);
-  const mediaMensal = financeiro.length ? totalFinAcumulado / financeiro.length : 0;
-  const chartData = [...financeiro]
-    .sort((a, b) => (a.mes || "").localeCompare(b.mes || ""))
-    .slice(-12)
-    .map((f) => ({ mes: monthLabel(f.mes), total: toNumber(f.somaFinalTotal) }));
+/* ---------------- INDICAÇÕES ---------------- */
+function renderIndicacoes(){
+  const sorted=[...DB.indicacoes].sort((a,b)=>(b.data||"").localeCompare(a.data||""));
+  const columns=[
+    {key:"indicadorId",label:"Quem indicou",render:r=>`<b>${esc(associadoNome(r.indicadorId))}</b>`},
+    {key:"indicadoId",label:"Associado indicado",render:r=>esc(nomeDoIndicado(r,associadoNome))},
+    {key:"data",label:"Data",render:r=>formatDateBR(r.data)},
+    {key:"valorComissao",label:"Valor da comissão",render:r=>formatBRL(toNumber(r.valorComissao))},
+    {key:"status",label:"Status",render:r=>badge(r.status,statusTone(r.status))},
+  ];
+  return `<div style="display:flex;flex-direction:column;gap:16px;">
+    <div style="display:flex;justify-content:flex-end;"><button class="btn-primary" data-action="novaIndicacao">${ic('plus',15)} Nova indicação</button></div>
+    ${dataTable("indicacoes",columns,sorted,{onEdit:true,onDelete:true,emptyText:"Nenhuma indicação registrada."})}
+  </div>`;
+}
 
-  const NAV = [
-    { key: "dashboard", label: "Painel", icon: LayoutDashboard },
-    { key: "carteira", label: "Carteira de associados", icon: Users },
-    { key: "financeiro", label: "Financeiro mensal", icon: Wallet },
+/* ---------------- EQUIPE ---------------- */
+function renderEquipe(){
+  const cm=currentMonth();
+  const producaoMes=DB.producaoEquipe.filter(p=>p.competencia===cm);
+  const consultoresAtivos=DB.equipe.filter(c=>c.status==="Ativo");
+  const totalPlacasEquipe=producaoMes.reduce((s,p)=>s+toNumber(p.placasVendidas),0);
+  const mediaPorConsultor=consultoresAtivos.length?totalPlacasEquipe/consultoresAtivos.length:0;
+  const selecionadosCount=DB.equipe.filter(c=>c.selecionadoPlanoCarreira).length;
+  const ranking=[...producaoMes].sort((a,b)=>toNumber(b.placasVendidas)-toNumber(a.placasVendidas));
+  const abaixoDaMedia=producaoMes.filter(p=>toNumber(p.placasVendidas)<mediaPorConsultor).map(p=>({...p,_nome:consultorNome(p.consultorId)})).sort((a,b)=>toNumber(a.placasVendidas)-toNumber(b.placasVendidas));
+
+  const columnsConsultores=[
+    {key:"selecionadoPlanoCarreira",label:"Plano de carreira",render:r=>`<input type="checkbox" style="width:16px;height:16px;cursor:pointer;" data-action="toggleSelecionado" data-id="${r.id}" ${r.selecionadoPlanoCarreira?'checked':''} />`},
+    {key:"nome",label:"Nome",render:r=>`<b>${esc(r.nome)}</b>`},
+    {key:"cargo",label:"Cargo",render:r=>esc(r.cargo||"")},
+    {key:"status",label:"Status",render:r=>badge(r.status,statusTone(r.status))},
+    {key:"dataEntrada",label:"Data de entrada",render:r=>formatDateBR(r.dataEntrada)},
+    {key:"telefone",label:"Telefone",render:r=>esc(r.telefone||"")},
+  ];
+  const columnsProducao=[
+    {key:"competencia",label:"Competência",render:r=>`<b>${monthLabel(r.competencia)}</b>`},
+    {key:"consultor",label:"Consultor",render:r=>esc(consultorNome(r.consultorId))},
+    {key:"placasVendidas",label:"Placas vendidas",render:r=>esc(r.placasVendidas||"")},
+    {key:"placasAtivas",label:"Placas ativas",render:r=>esc(r.placasAtivas||"")},
+    {key:"elegivel",label:"Elegível (≥3)",render:r=>badge(toNumber(r.placasVendidas)>=EQUIPE_VENDAS_MIN_POR_PESSOA?"Sim":"Não",toNumber(r.placasVendidas)>=EQUIPE_VENDAS_MIN_POR_PESSOA?"green":"amber")},
   ];
 
-  return (
-    <div style={{
-      fontFamily: "'Commissioner', Inter, system-ui, -apple-system, sans-serif",
-      background: "#F4F5F6", minHeight: "100%", color: BLACK,
-    }}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Commissioner:wght@400;600;700;800&display=swap');`}</style>
-
-      {/* Header */}
-      <div style={{ background: BLACK, borderBottom: `4px solid ${RED}` }}>
-        <div style={{ maxWidth: 1180, margin: "0 auto", padding: "18px 22px" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-            <div>
-              <div style={{ color: RED, fontSize: 11, fontWeight: 800, letterSpacing: "0.14em" }}>ANCORE PROTEÇÃO VEICULAR</div>
-              <h1 style={{ color: "#fff", fontSize: 20, fontWeight: 800, margin: "2px 0 0", letterSpacing: "0.01em" }}>
-                Sistema Financeiro do Consultor
-              </h1>
-            </div>
-            <nav style={{ display: "flex", gap: 6 }}>
-              {NAV.map((n) => {
-                const Icon = n.icon;
-                const active = tab === n.key;
-                return (
-                  <button
-                    key={n.key}
-                    onClick={() => setTab(n.key)}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 7,
-                      background: active ? RED : "transparent",
-                      color: active ? "#fff" : SILVER,
-                      border: active ? "none" : `1px solid #3A3B3E`,
-                      borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer",
-                    }}
-                  >
-                    <Icon size={15} /> {n.label}
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ maxWidth: 1180, margin: "0 auto", padding: "24px 22px 60px" }}>
-        {loading ? (
-          <div style={{ color: "#6B7076", fontSize: 14, padding: 40, textAlign: "center" }}>Carregando dados…</div>
-        ) : tab === "dashboard" ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-              <KpiCard icon={Users} label="Associados na carteira" value={associados.length} />
-              <KpiCard icon={CircleDollarSign} label="Total em adesões" value={formatBRL(totalAdesoesCarteira)} accent={RED_DARK} />
-              <KpiCard icon={Wallet} label="Financeiro acumulado" value={formatBRL(totalFinAcumulado)} />
-              <KpiCard icon={TrendingUp} label="Média mensal" value={formatBRL(mediaMensal)} accent={RED_DARK} />
-            </div>
-
-            <div style={{ background: "#fff", borderRadius: 12, border: `1px solid ${SILVER}`, padding: 20 }}>
-              <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7076", margin: "0 0 16px" }}>
-                Evolução do financeiro mensal
-              </h3>
-              {chartData.length === 0 ? (
-                <div style={{ color: "#9AA0A6", fontSize: 13, padding: "30px 0", textAlign: "center" }}>
-                  Nenhum mês lançado ainda. Adicione um registro em "Financeiro mensal".
-                </div>
-              ) : (
-                <div style={{ width: "100%", height: 260 }}>
-                  <ResponsiveContainer>
-                    <BarChart data={chartData}>
-                      <CartesianGrid stroke="#EDEDED" vertical={false} />
-                      <XAxis dataKey="mes" tick={{ fontSize: 12, fill: "#6B7076" }} axisLine={{ stroke: SILVER }} tickLine={false} />
-                      <YAxis tick={{ fontSize: 11, fill: "#6B7076" }} axisLine={false} tickLine={false}
-                        tickFormatter={(v) => `R$${(v / 1000).toFixed(0)}k`} />
-                      <Tooltip formatter={(v) => formatBRL(v)} contentStyle={{ borderRadius: 8, border: `1px solid ${SILVER}`, fontSize: 13 }} />
-                      <Bar dataKey="total" fill={RED} radius={[4, 4, 0, 0]} name="Soma final total" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
-
-            <div style={{ background: "#fff", borderRadius: 12, border: `1px solid ${SILVER}`, padding: 20 }}>
-              <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7076", margin: "0 0 14px" }}>
-                Últimos associados cadastrados
-              </h3>
-              {associados.length === 0 ? (
-                <div style={{ color: "#9AA0A6", fontSize: 13, padding: "20px 0", textAlign: "center" }}>Nenhum associado cadastrado ainda.</div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {filteredAssociados.slice(0, 5).map((a) => (
-                    <div key={a.id} style={{
-                      display: "flex", justifyContent: "space-between", alignItems: "center",
-                      padding: "10px 14px", background: ICE, borderRadius: 8, fontSize: 13,
-                    }}>
-                      <span style={{ fontWeight: 700 }}>{a.nomeCompleto}</span>
-                      <span style={{ color: "#3A5A66" }}>{a.placa || "—"}</span>
-                      <span style={{ color: "#3A5A66" }}>{formatDateBR(a.dataContrato)}</span>
-                      <span style={{ fontWeight: 700 }}>{formatBRL(toNumber(a.adesao))}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : tab === "carteira" ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-              <div style={{ position: "relative", flex: 1, minWidth: 240, maxWidth: 360 }}>
-                <Search size={15} style={{ position: "absolute", left: 12, top: 11, color: "#9AA0A6" }} />
-                <TextInput
-                  placeholder="Buscar por nome, CPF, placa ou telefone…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  style={{ paddingLeft: 34 }}
-                />
-              </div>
-              <button style={btnPrimary} onClick={() => setModalAssociado({ mode: "new" })}>
-                <Plus size={15} /> Novo associado
-              </button>
-            </div>
-
-            <div style={{ background: "#fff", borderRadius: 12, border: `1px solid ${SILVER}`, overflow: "hidden" }}>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 960 }}>
-                  <thead>
-                    <tr style={{ background: BLACK }}>
-                      {["Contrato", "Nome", "Telefone", "Placa", "Origem", "Plano", "Adesão", "1ª mensalidade", ""].map((h) => (
-                        <th key={h} style={{ textAlign: "left", padding: "10px 14px", color: "#fff", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredAssociados.length === 0 ? (
-                      <tr><td colSpan={9} style={{ padding: 30, textAlign: "center", color: "#9AA0A6" }}>Nenhum associado encontrado.</td></tr>
-                    ) : filteredAssociados.map((a, i) => (
-                      <tr key={a.id} style={{ background: i % 2 ? "#FAFAFA" : "#fff", borderBottom: `1px solid #EEE` }}>
-                        <td style={cell}>{formatDateBR(a.dataContrato)}</td>
-                        <td style={{ ...cell, fontWeight: 700 }}>{a.nomeCompleto}</td>
-                        <td style={cell}>{a.telefone || "—"}</td>
-                        <td style={cell}>{a.placa || "—"}</td>
-                        <td style={cell}>{a.origem || "—"}</td>
-                        <td style={cell}>{a.planoEscolhido || "—"}</td>
-                        <td style={cell}>{formatBRL(toNumber(a.adesao))}</td>
-                        <td style={cell}>{formatBRL(toNumber(a.valorPrimeiraMensalidade))}</td>
-                        <td style={{ ...cell, whiteSpace: "nowrap" }}>
-                          <button onClick={() => setModalAssociado({ mode: "edit", data: a })} style={iconBtn}><Pencil size={14} /></button>
-                          <button onClick={() => deleteAssociado(a.id)} style={{ ...iconBtn, color: RED }}><Trash2 size={14} /></button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button style={btnPrimary} onClick={() => setModalFin({ mode: "new" })}>
-                <Plus size={15} /> Lançar mês
-              </button>
-            </div>
-
-            <div style={{ background: "#fff", borderRadius: 12, border: `1px solid ${SILVER}`, overflow: "hidden" }}>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 900 }}>
-                  <thead>
-                    <tr style={{ background: BLACK }}>
-                      {["Mês", "Adesão", "Premiação mensal", "Premiação semanal", "Consultoria", "Plano de carreira", "Recorrência placas", "Indicações", "Soma final total", ""].map((h) => (
-                        <th key={h} style={{ textAlign: "left", padding: "10px 14px", color: "#fff", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedFin.length === 0 ? (
-                      <tr><td colSpan={10} style={{ padding: 30, textAlign: "center", color: "#9AA0A6" }}>Nenhum mês lançado.</td></tr>
-                    ) : sortedFin.map((f, i) => (
-                      <tr key={f.id} style={{ background: i % 2 ? "#FAFAFA" : "#fff", borderBottom: `1px solid #EEE` }}>
-                        <td style={{ ...cell, fontWeight: 700 }}>{monthLabel(f.mes)}</td>
-                        <td style={cell}>{formatBRL(toNumber(f.adesao))}</td>
-                        <td style={cell}>{formatBRL(toNumber(f.premiacaoMensal))}</td>
-                        <td style={cell}>{formatBRL(toNumber(f.premiacaoSemanal))}</td>
-                        <td style={cell}>{formatBRL(toNumber(f.consultoria))}</td>
-                        <td style={cell}>{formatBRL(toNumber(f.planoDeCarreira))}</td>
-                        <td style={cell}>{formatBRL(toNumber(f.recorrenciaPlacasAtivas))}</td>
-                        <td style={cell}>{formatBRL(toNumber(f.pagamentoIndicacoes))}</td>
-                        <td style={{ ...cell, fontWeight: 800, color: RED_DARK }}>{formatBRL(toNumber(f.somaFinalTotal))}</td>
-                        <td style={{ ...cell, whiteSpace: "nowrap" }}>
-                          <button onClick={() => setModalFin({ mode: "edit", data: f })} style={iconBtn}><Pencil size={14} /></button>
-                          <button onClick={() => deleteFin(f.id)} style={{ ...iconBtn, color: RED }}><Trash2 size={14} /></button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {modalAssociado && (
-        <Modal title={modalAssociado.mode === "edit" ? "Editar associado" : "Novo associado"} onClose={() => setModalAssociado(null)} wide>
-          <AssociadoForm initial={modalAssociado.data} onSave={saveAssociado} onCancel={() => setModalAssociado(null)} />
-        </Modal>
-      )}
-      {modalFin && (
-        <Modal title={modalFin.mode === "edit" ? "Editar mês" : "Lançar mês"} onClose={() => setModalFin(null)}>
-          <FinanceiroForm initial={modalFin.data} onSave={saveFin} onCancel={() => setModalFin(null)} />
-        </Modal>
-      )}
+  return `<div style="display:flex;flex-direction:column;gap:20px;">
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+      ${kpiCard("usercog","Consultores ativos",consultoresAtivos.length)}
+      ${kpiCard("car","Placas da equipe (mês)",totalPlacasEquipe,{accent:RED_DARK})}
+      ${kpiCard("trendUp","Média por consultor",mediaPorConsultor.toFixed(1))}
+      ${kpiCard("check" in ICONS?"check":"target",`Selecionados p/ Plano de Carreira`,`${selecionadosCount}/2`,{accent:selecionadosCount===2?GREEN:AMBER})}
     </div>
-  );
+    ${sectionCard("Abaixo da média", abaixoDaMedia.length===0?emptyNote("Nenhum consultor abaixo da média da equipe este mês."):
+      `<div style="display:flex;flex-direction:column;gap:8px;">${abaixoDaMedia.map(p=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:${SURFACE_ALT};border-radius:8px;font-size:13px;">
+          <span><b>${esc(p._nome)}</b></span><span>${p.placasVendidas} venda(s) · média da equipe: ${mediaPorConsultor.toFixed(1)}</span>
+        </div>`).join("")}</div>`)}
+    ${sectionCard("Consultores", `<div style="font-size:12px;color:${MUTED};margin-bottom:10px;">Marque exatamente 2 consultores para validar o requisito de equipe do Plano de Carreira.</div>${dataTable("consultores",columnsConsultores,DB.equipe,{onEdit:true,onDelete:true,emptyText:"Nenhum consultor cadastrado."})}`,`<button class="btn-ghost" data-action="novoConsultor">${ic('plus',14)} Novo consultor</button>`)}
+    ${sectionCard("Ranking de produção do mês", ranking.length===0?emptyNote("Nenhuma produção lançada este mês."):
+      `<div style="display:flex;flex-direction:column;gap:8px;">${ranking.map((p,i)=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--ice,#12202B);border-radius:8px;font-size:13px;">
+          <span><b>#${i+1}</b> ${esc(consultorNome(p.consultorId))}</span><span>${p.placasVendidas} placas</span>
+        </div>`).join("")}</div>`)}
+    ${sectionCard("Produção mensal", dataTable("producao",columnsProducao,[...DB.producaoEquipe].sort((a,b)=>(b.competencia||"").localeCompare(a.competencia||"")),{onEdit:true,onDelete:true,emptyText:"Nenhuma produção lançada."}),`<button class="btn-ghost" data-action="novaProducao">${ic('plus',14)} Lançar produção</button>`)}
+  </div>`;
 }
 
-const cell = { padding: "10px 14px", color: BLACK };
-const iconBtn = {
-  background: "none", border: "none", cursor: "pointer", color: "#6B7076",
-  padding: 5, marginRight: 2,
-};
+/* ---------------- RELATÓRIOS ---------------- */
+function renderRelatorios(){
+  const f=UI.relatorios;
+  const associadoOrigem=id=>{ const a=DB.associados.find(x=>x.id===id); return a?(a.origem||""):""; };
+  const filtrados=DB.vendas.filter(v=>
+    (!f.origem||associadoOrigem(v.associadoId)===f.origem)&&
+    (!f.plano||v.plano===f.plano)&&
+    (!f.status||v.status===f.status)&&
+    (!f.inicio||(v.data||"")>=f.inicio)&&
+    (!f.fim||(v.data||"")<=f.fim)
+  );
+  const porPlano={}; filtrados.forEach(v=>{ const p=v.plano||"Sem plano"; porPlano[p]=(porPlano[p]||0)+1; });
+  const porOrigem={}; filtrados.forEach(v=>{ const o=associadoOrigem(v.associadoId)||"Sem origem"; porOrigem[o]=(porOrigem[o]||0)+1; });
+  const columns=[
+    {key:"data",label:"Data",render:r=>formatDateBR(r.data)},
+    {key:"associado",label:"Associado",render:r=>esc(associadoNome(r.associadoId))},
+    {key:"veiculoPlaca",label:"Placa",render:r=>esc(r.veiculoPlaca||"")},
+    {key:"plano",label:"Plano",render:r=>esc(r.plano||"")},
+    {key:"origem",label:"Origem",render:r=>esc(associadoOrigem(r.associadoId)||"—")},
+    {key:"status",label:"Status",render:r=>badge(r.status,statusTone(r.status))},
+    {key:"valorAdesao",label:"Adesão",render:r=>formatBRL(toNumber(r.valorAdesao))},
+  ];
+  return `<div style="display:flex;flex-direction:column;gap:18px;">
+    ${sectionCard("Filtros",`<div class="grid-3col">
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Origem</span><select class="input" data-action="relOrigem"><option value="">Selecionar…</option>${ORIGEM_OPTS.map(o=>`<option value="${esc(o)}" ${f.origem===o?'selected':''}>${esc(o)}</option>`).join("")}</select></label>
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Plano</span><select class="input" data-action="relPlano"><option value="">Selecionar…</option>${PLANO_OPTS.map(o=>`<option value="${esc(o)}" ${f.plano===o?'selected':''}>${esc(o)}</option>`).join("")}</select></label>
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Status</span><select class="input" data-action="relStatus"><option value="">Selecionar…</option>${VENDA_STATUS_OPTS.map(o=>`<option value="${esc(o)}" ${f.status===o?'selected':''}>${esc(o)}</option>`).join("")}</select></label>
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Contrato de</span><input class="input" type="date" value="${f.inicio}" data-action="relInicio" /></label>
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Contrato até</span><input class="input" type="date" value="${f.fim}" data-action="relFim" /></label>
+    </div>`)}
+    <div class="grid-2col">
+      ${sectionCard("Ranking de planos", Object.keys(porPlano).length===0?emptyNote("Sem dados."):`<div style="display:flex;flex-direction:column;gap:8px;">${Object.entries(porPlano).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:13px;"><span>${esc(k)}</span><b>${v}</b></div>`).join("")}</div>`)}
+      ${sectionCard("Origem das vendas", Object.keys(porOrigem).length===0?emptyNote("Sem dados."):`<div style="display:flex;flex-direction:column;gap:8px;">${Object.entries(porOrigem).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:13px;"><span>${esc(k)}</span><b>${v}</b></div>`).join("")}</div>`)}
+    </div>
+    ${sectionCard(`Carteira filtrada (${filtrados.length})`, dataTable("relatorios",columns,filtrados,{emptyText:"Nenhum registro para os filtros selecionados."}),
+      `<div style="display:flex;gap:8px;"><button class="btn-ghost" data-action="exportRelatorio">${ic('download',14)} Excel</button><button class="btn-ghost" data-action="printRelatorio">${ic('printer',14)} Imprimir / PDF</button></div>`)}
+  </div>`;
+}
+
+/* ---------------- CONFIGURAÇÕES ---------------- */
+function renderConfiguracoes(){
+  const config=DB.config;
+  return `<div style="display:flex;flex-direction:column;gap:20px;">
+    ${sectionCard("Seu cargo atual",`<div style="display:grid;grid-template-columns:1fr 2fr;gap:14px;align-items:end;">
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Cargo</span>
+        <select class="input" data-action="setCargo">${CARGO_OPTS.map(o=>`<option value="${esc(o)}" ${config.meuCargo===o?'selected':''}>${esc(o)}</option>`).join("")}</select></label>
+      <div style="font-size:12.5px;color:${MUTED}">Define o mínimo de vendas pessoais exigido para elegibilidade de consultoria: Gestores precisam de ${EQUIPE_VENDAS_MIN_POR_PESSOA} vendas/mês; Consultores e Líderes precisam de 5.</div>
+    </div>`)}
+    ${sectionCard("Regras oficiais da Ancore (fixas)",`
+      <div style="font-size:12.5px;color:${MUTED};margin-bottom:14px;">Essas regras seguem a política oficial informada e não são editáveis pelo sistema.</div>
+      <div style="display:flex;flex-direction:column;gap:18px;">
+        <div><div style="font-weight:700;font-size:13px;margin-bottom:8px;">Recorrência</div>
+          <div style="font-size:13px;color:${MUTED};line-height:1.7;">A cada ${RECORRENCIA_BLOCO} placas ativas (boletos pagos) no mês anterior → ${formatBRL(RECORRENCIA_VALOR_POR_BLOCO)}.<br/>Requisito: mínimo ${RECORRENCIA_VENDAS_MINIMAS_MES} vendas pessoais no mês anterior.</div></div>
+        <div><div style="font-weight:700;font-size:13px;margin-bottom:8px;">Consultoria especializada</div>
+          <div style="font-size:13px;color:${MUTED};line-height:1.7;">Mínimo ${CONSULTORIA_PLACAS_ATIVAS_MINIMAS} placas com consultoria ativa.<br/>Consultores e Líderes: mínimo 5 vendas pessoais no mês anterior. Gestores: mínimo ${EQUIPE_VENDAS_MIN_POR_PESSOA}.<br/>Valores permitidos: ${CONSULTORIA_VALORES.map(v=>formatBRL(v)).join(" · ")}.</div></div>
+        <div><div style="font-weight:700;font-size:13px;margin-bottom:8px;">Plano de Carreira (produção pessoal + equipe do mês anterior)</div>
+          <table style="width:100%;font-size:13px;border-collapse:collapse;"><thead><tr style="text-align:left;color:${MUTED}"><th style="padding:4px 8px 8px 0;background:none;text-transform:none;letter-spacing:normal;font-weight:400;">Nível</th><th style="background:none;">Placas</th><th style="background:none;">Premiação</th></tr></thead>
+          <tbody>${PLANO_FAIXAS.map(f=>`<tr style="border-top:1px solid #333;"><td style="padding:6px 8px 6px 0;">${esc(f.nivel)}</td><td>${f.min}+</td><td>${formatBRL(f.premiacao)}</td></tr>`).join("")}</tbody></table>
+          <div style="font-size:12.5px;color:${MUTED};margin-top:8px;">Para níveis com premiação, exige-se pelo menos ${EQUIPE_MIN_ELEGIVEIS} pessoas da equipe com ${EQUIPE_VENDAS_MIN_POR_PESSOA}+ vendas no mês.</div></div>
+        <div><div style="font-weight:700;font-size:13px;margin-bottom:8px;">Premiação semanal</div>
+          <div style="font-size:13px;color:${MUTED}">A cada ${PREMIACAO_SEMANAL_BLOCO} placas entregues na semana (segunda a domingo) → ${formatBRL(PREMIACAO_SEMANAL_VALOR)}.</div></div>
+        <div><div style="font-weight:700;font-size:13px;margin-bottom:8px;">Premiação mensal (por placas vendidas no mês)</div>
+          <table style="width:100%;font-size:13px;border-collapse:collapse;"><thead><tr style="text-align:left;color:${MUTED}"><th style="padding:4px 8px 8px 0;background:none;text-transform:none;letter-spacing:normal;font-weight:400;">Placas</th><th style="background:none;">Premiação</th></tr></thead>
+          <tbody>${PREMIACAO_MENSAL_FAIXAS.map(f=>`<tr style="border-top:1px solid #333;"><td style="padding:6px 8px 6px 0;">${f.min}+</td><td>${formatBRL(f.valor)}</td></tr>`).join("")}</tbody></table></div>
+      </div>
+    `)}
+  </div>`;
+}
+
+/* ---------------- ROOT RENDER ---------------- */
+function currentTabLabel(){ const n=NAV.find(n=>n.key===UI.tab); return n?n.label:""; }
+
+function globalSearchResults(){
+  const q=UI.globalQuery.trim().toLowerCase();
+  if(!q) return [];
+  const hits=[];
+  DB.associados.forEach(a=>{ if([a.nomeCompleto,a.cpf,a.telefone,a.email].some(v=>(v||"").toLowerCase().includes(q))) hits.push({type:"Associado",label:a.nomeCompleto,assocId:a.id}); });
+  DB.vendas.forEach(v=>{ if([associadoNome(v.associadoId),v.veiculoPlaca,v.veiculoModelo].some(x=>(x||"").toLowerCase().includes(q))) hits.push({type:"Venda",label:`${associadoNome(v.associadoId)} — ${v.veiculoPlaca||"placa"}`,goVendas:true}); });
+  return hits.slice(0,8);
+}
+
+function render(){
+  const app=document.getElementById("app");
+  const results=globalSearchResults();
+
+  let content;
+  if(LOADING){
+    content=`<div style="color:${MUTED};font-size:14px;padding:40px;text-align:center;">Carregando dados…</div>`;
+  }else if(UI.tab==="dashboard"){
+    content=renderDashboard();
+  }else if(UI.tab==="carteira"){
+    content=UI.selectedAssociadoId?renderFicha(UI.selectedAssociadoId):renderCarteira();
+  }else if(UI.tab==="financeiro"){
+    content=renderFinanceiro();
+  }else if(UI.tab==="vendas"){
+    content=renderVendas();
+  }else if(UI.tab==="equipe"){
+    content=renderEquipe();
+  }else if(UI.tab==="metas"){
+    content=renderMetas();
+  }else if(UI.tab==="recorrencia"){
+    content=renderRecorrencia();
+  }else if(UI.tab==="aniversariantes"){
+    content=renderAniversariantes();
+  }else if(UI.tab==="indicacoes"){
+    content=renderIndicacoes();
+  }else if(UI.tab==="relatorios"){
+    content=renderRelatorios();
+  }else{
+    content=renderConfiguracoes();
+  }
+
+  app.innerHTML=`
+  <div style="font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--page-bg);min-height:100vh;color:var(--text);display:flex;">
+    <div style="width:${UI.sidebarOpen?232:64}px;transition:width .15s ease;background:${BLACK};min-height:100vh;display:flex;flex-direction:column;border-right:3px solid ${RED};flex-shrink:0;">
+      <div style="display:flex;align-items:center;justify-content:${UI.sidebarOpen?'space-between':'center'};padding:18px 16px;">
+        ${UI.sidebarOpen?`<div><div style="color:${RED};font-size:10px;font-weight:800;letter-spacing:.14em;">ANCORE</div><div style="color:#fff;font-size:13.5px;font-weight:700;">CRM Financeiro</div></div>`:""}
+        <button class="icon-btn" style="color:${SILVER}" data-action="toggleSidebar">${ic(UI.sidebarOpen?'chevronLeft':'chevronRight',18)}</button>
+      </div>
+      <nav style="display:flex;flex-direction:column;gap:2px;padding:6px 10px;flex:1;">
+        ${NAV.map(n=>{
+          const active=UI.tab===n.key;
+          return `<button data-action="setTab" data-tab="${n.key}" title="${esc(n.label)}" style="display:flex;align-items:center;gap:10px;background:${active?RED:'transparent'};color:${active?'#fff':SILVER};border:none;border-radius:8px;padding:${UI.sidebarOpen?'10px 12px':'10px'};font-size:13px;font-weight:600;cursor:pointer;justify-content:${UI.sidebarOpen?'flex-start':'center'};white-space:nowrap;overflow:hidden;width:100%;">
+            ${ic(n.icon,16)}${UI.sidebarOpen?esc(n.label):""}
+          </button>`;
+        }).join("")}
+      </nav>
+    </div>
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+      <div style="background:${SURFACE};border-bottom:1px solid ${SILVER};padding:14px 24px;display:flex;align-items:center;gap:16px;">
+        <div style="position:relative;width:360px;max-width:50vw;">
+          <span style="position:absolute;left:12px;top:11px;color:${MUTED}">${ic('search',15)}</span>
+          <input class="input" style="padding-left:34px;" placeholder="Buscar associado, CPF, placa, consultor…" value="${esc(UI.globalQuery)}" data-action="globalSearch" id="global-search" />
+          ${results.length>0?`<div style="position:absolute;top:42px;left:0;right:0;background:${SURFACE};border:1px solid ${SILVER};border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.4);z-index:40;overflow:hidden;">
+            ${results.map((r,i)=>`<button data-action="globalResultClick" data-idx="${i}" style="display:flex;justify-content:space-between;width:100%;text-align:left;padding:10px 14px;background:none;border:none;border-bottom:${i<results.length-1?`1px solid ${SILVER}`:'none'};cursor:pointer;font-size:13px;color:${"var(--text)"};"><span>${esc(r.label)}</span><span style="color:${MUTED};font-size:11px;">${esc(r.type)}</span></button>`).join("")}
+          </div>`:""}
+        </div>
+        <div style="margin-left:auto;font-size:12.5px;color:${MUTED};font-weight:600;">${esc(currentTabLabel())}</div>
+      </div>
+      <div style="padding:22px 24px 60px;flex:1;">${content}</div>
+      <div style="padding:10px 24px;border-top:1px solid var(--border-soft);text-align:center;font-size:11px;color:${MUTED};">
+        CRM Financeiro Ancore · v1.0 (HTML) · Última atualização: ${new Date().toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"})}
+      </div>
+    </div>
+  </div>`;
+
+  DB._globalResults=results;
+  document.getElementById("modalRoot").innerHTML=renderModal();
+
+  if(UI.tab==="dashboard" && !LOADING){ drawDashboardCharts(); }
+}
+
+/* ---------------- EVENT DELEGATION ---------------- */
+document.addEventListener("click",function(e){
+  const t=e.target.closest("[data-action]");
+  if(!t) return;
+  const action=t.getAttribute("data-action");
+
+  if(action==="overlayClose"){ if(e.target===t) closeModal(); return; }
+  if(action==="closeModal"){ closeModal(); return; }
+  if(action==="toggleSidebar"){ UI.sidebarOpen=!UI.sidebarOpen; rerender(); return; }
+  if(action==="setTab"){ UI.tab=t.getAttribute("data-tab"); UI.selectedAssociadoId=null; rerender(); return; }
+  if(action==="globalResultClick"){
+    const idx=parseInt(t.getAttribute("data-idx"),10);
+    const r=DB._globalResults[idx];
+    if(r){ if(r.assocId){ UI.tab="carteira"; UI.selectedAssociadoId=r.assocId; } else if(r.goVendas){ UI.tab="vendas"; } UI.globalQuery=""; rerender(); }
+    return;
+  }
+
+  /* Carteira */
+  if(action==="novoAssociado"){ openModal({kind:"crud",title:"Novo associado",schema:ASSOCIADO_SCHEMA,draft:{},coll:"associados",requiredKey:"nomeCompleto",wide:true}); return; }
+  if(action==="voltarCarteira"){ UI.selectedAssociadoId=null; rerender(); return; }
+  if(t.closest("tr[data-table='carteira']") && action==="rowclick"){}
+  if(action==="rowclick" && t.getAttribute("data-table")==="carteira"){ UI.selectedAssociadoId=t.getAttribute("data-id"); rerender(); return; }
+
+  /* Ficha */
+  if(action==="novaVendaFicha"){ openModal({kind:"crud",title:"Nova venda",schema:VENDA_SCHEMA,draft:{associadoId:t.getAttribute("data-id")},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); return; }
+  if(action==="editVendaFicha"){ const v=DB.vendas.find(x=>x.id===t.getAttribute("data-id")); openModal({kind:"crud",title:"Editar venda",schema:VENDA_SCHEMA,draft:{...v},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); return; }
+  if(action==="fichaAddContato"){
+    const id=t.getAttribute("data-id"); const nota=(UI.fichaNovaNota||"").trim();
+    if(!nota) return;
+    const a=DB.associados.find(x=>x.id===id);
+    const contatos=a.contatos||[];
+    collSave("associados",{...a,contatos:[{data:new Date().toISOString().slice(0,10),nota},...contatos]});
+    UI.fichaNovaNota="";
+    return;
+  }
+
+  /* Generic table actions (edit/delete/pagination) */
+  const table=t.getAttribute("data-table");
+  if(action==="edit" && table){ handleTableEdit(table,t.getAttribute("data-id")); return; }
+  if(action==="delete" && table){ handleTableDelete(table,t.getAttribute("data-id")); return; }
+  if(action==="pagePrev" && table){ UI.page[table]=Math.max(0,(UI.page[table]||0)-1); rerender(); return; }
+  if(action==="pageNext" && table){ UI.page[table]=(UI.page[table]||0)+1; rerender(); return; }
+
+  /* Vendas tab */
+  if(action==="novaVenda"){ if(DB.associados.length===0){ alert("Cadastre um associado na Carteira antes de lançar uma venda."); return; } openModal({kind:"crud",title:"Nova venda",schema:VENDA_SCHEMA,draft:{},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); return; }
+  if(action==="toggleFiltrosVendas"){ UI.vendas.showFiltros=!UI.vendas.showFiltros; rerender(); return; }
+  if(action==="abrirAssociadoDaVenda"){ UI.tab="carteira"; UI.selectedAssociadoId=t.getAttribute("data-id"); rerender(); return; }
+
+  /* Financeiro */
+  if(action==="novaDespesa"){ openModal({kind:"crud",title:"Lançar despesas/outras receitas",schema:DESPESA_SCHEMA,draft:{},coll:"despesas",requiredKey:"competencia"}); return; }
+
+  /* Equipe */
+  if(action==="novoConsultor"){ openModal({kind:"crud",title:"Novo consultor",schema:CONSULTOR_SCHEMA,draft:{},coll:"equipe",requiredKey:"nome",wide:true}); return; }
+  if(action==="novaProducao"){
+    if(DB.equipe.length===0){ alert("Cadastre um consultor antes de lançar produção."); return; }
+    openModal({kind:"crud",title:"Lançar produção mensal",schema:PRODUCAO_SCHEMA,draft:{},coll:"producaoEquipe",requiredKey:"consultorId",wide:true});
+    return;
+  }
+  if(action==="toggleSelecionado"){
+    const c=DB.equipe.find(x=>x.id===t.getAttribute("data-id"));
+    const jaSelecionados=DB.equipe.filter(x=>x.selecionadoPlanoCarreira&&x.id!==c.id);
+    if(!c.selecionadoPlanoCarreira && jaSelecionados.length>=2){ alert('Só é possível manter 2 consultores selecionados para o Plano de Carreira. Desmarque um antes de selecionar outro.'); rerender(); return; }
+    collSave("equipe",{...c,selecionadoPlanoCarreira:!c.selecionadoPlanoCarreira});
+    return;
+  }
+
+  /* Metas */
+  if(action==="novaMeta"){ openModal({kind:"meta",draft:{tipo:"mensal",periodo:currentMonth()}}); return; }
+  if(action==="saveMeta"){
+    const d=UI.modal.draft;
+    if(!d.periodo) return;
+    collSave("metas",d); closeModal(); return;
+  }
+
+  /* Indicações */
+  if(action==="novaIndicacao"){ openModal({kind:"indicacao",draft:{},modoManual:false}); return; }
+  if(action==="indModo"){ UI.modal.modoManual = t.getAttribute("data-val")==="1"; rerender(); return; }
+  if(action==="saveIndicacao"){
+    const d=UI.modal.draft, modoManual=UI.modal.modoManual;
+    const ok = d.indicadorId && (modoManual ? (d.indicadoNomeManual||"").trim() : d.indicadoId);
+    if(!ok) return;
+    const finalData = modoManual ? {...d,indicadoId:""} : {...d,indicadoNomeManual:"",indicadoTelefoneManual:""};
+    collSave("indicacoes",finalData); closeModal(); return;
+  }
+
+  /* Aniversariantes */
+  if(action==="toggleOnlyWeek"){ UI.aniversariantes.onlyWeek=!UI.aniversariantes.onlyWeek; rerender(); return; }
+
+  /* Relatorios */
+  if(action==="exportRelatorio"){
+    const reg=DB._tableRegistry&&DB._tableRegistry["relatorios"];
+    const rows=(reg?reg.rows:[]).map(v=>({data:v.data,associado:associadoNome(v.associadoId),placa:v.veiculoPlaca,plano:v.plano,status:v.status,adesao:toNumber(v.valorAdesao),consultoria:toNumber(v.consultoria)}));
+    exportXLSX(rows,"ancore-relatorio-vendas.xlsx","Vendas");
+    return;
+  }
+  if(action==="printRelatorio"){ window.print(); return; }
+
+  /* CRUD modal generic save */
+  if(action==="saveCrud"){
+    const m=UI.modal;
+    if(m.requiredKey && !(m.draft[m.requiredKey]||"").toString().trim()) return;
+    if(m.coll==="despesas"){
+      const existing=DB.despesas.find(x=>x.competencia===m.draft.competencia && x.id!==m.draft.id);
+      collSave("despesas",{...m.draft, id:m.draft.id||(existing&&existing.id)});
+    }else if(m.coll==="producaoEquipe"){
+      const existing=DB.producaoEquipe.find(x=>x.competencia===m.draft.competencia && x.consultorId===m.draft.consultorId && x.id!==m.draft.id);
+      collSave("producaoEquipe",{...m.draft, id:m.draft.id||(existing&&existing.id)});
+    }else{
+      collSave(m.coll, m.draft);
+    }
+    closeModal();
+    return;
+  }
+
+  /* documentos field add/remove */
+  if(action==="docAdd"){
+    const ns=t.getAttribute("data-ns");
+    const draft=UI.docDrafts[ns]||{tipo:"",nome:""};
+    if(!(draft.nome||"").trim()) return;
+    const novo={tipo:draft.tipo,nome:draft.nome,data:new Date().toISOString().slice(0,10)};
+    if(ns==="vendaDocs"){
+      const list=UI.modal.draft.documentosVeiculo||[];
+      UI.modal.draft.documentosVeiculo=[novo,...list];
+    }else if(ns.startsWith("assocDocs-")){
+      const id=ns.replace("assocDocs-","");
+      const a=DB.associados.find(x=>x.id===id);
+      const list=a.documentos||[];
+      collSave("associados",{...a,documentos:[novo,...list]});
+    }
+    UI.docDrafts[ns]={tipo:draft.tipo,nome:""};
+    rerender();
+    return;
+  }
+  if(action==="docRemove"){
+    const ns=t.getAttribute("data-ns"); const idx=parseInt(t.getAttribute("data-idx"),10);
+    if(ns==="vendaDocs"){
+      const list=UI.modal.draft.documentosVeiculo||[];
+      UI.modal.draft.documentosVeiculo=list.filter((_,i)=>i!==idx);
+    }else if(ns.startsWith("assocDocs-")){
+      const id=ns.replace("assocDocs-","");
+      const a=DB.associados.find(x=>x.id===id);
+      const list=(a.documentos||[]).filter((_,i)=>i!==idx);
+      collSave("associados",{...a,documentos:list});
+      return;
+    }
+    rerender();
+    return;
+  }
+});
+
+document.addEventListener("input",function(e){
+  const t=e.target;
+  const action=t.getAttribute("data-action");
+  const kind=t.getAttribute("data-kind");
+
+  if(t.id==="global-search"){ UI.globalQuery=t.value; rerender(); return; }
+  if(action==="carteiraSearch"){ UI.carteira.search=t.value; rerender(); return; }
+  if(action==="carteiraOrigem"){ UI.carteira.origem=t.value; rerender(); return; }
+  if(action==="vendasSearch"){ UI.vendas.search=t.value; rerender(); return; }
+  if(action==="vendasStatus"){ UI.vendas.status=t.value; rerender(); return; }
+  if(action==="vendasOrigem"){ UI.vendas.origem=t.value; rerender(); return; }
+  if(action==="vendasPlano"){ UI.vendas.plano=t.value; rerender(); return; }
+  if(action==="vendasInicio"){ UI.vendas.inicio=t.value; rerender(); return; }
+  if(action==="vendasFim"){ UI.vendas.fim=t.value; rerender(); return; }
+  if(action==="relOrigem"){ UI.relatorios.origem=t.value; rerender(); return; }
+  if(action==="relPlano"){ UI.relatorios.plano=t.value; rerender(); return; }
+  if(action==="relStatus"){ UI.relatorios.status=t.value; rerender(); return; }
+  if(action==="relInicio"){ UI.relatorios.inicio=t.value; rerender(); return; }
+  if(action==="relFim"){ UI.relatorios.fim=t.value; rerender(); return; }
+  if(action==="setDashboardMes"){ UI.dashboardMes=t.value; rerender(); return; }
+  if(action==="setFinanceiroMes"){ UI.financeiroMes=t.value; rerender(); return; }
+  if(action==="setRecorrenciaMes"){ UI.recorrenciaMes=t.value; rerender(); return; }
+  if(action==="setCargo"){ persistConfig({...DB.config,meuCargo:t.value}).then(rerender); return; }
+  if(action==="fichaNotaInput"){ UI.fichaNovaNota=t.value; return; } /* não rerender para não perder foco */
+
+  if(kind==="modalfield"){ UI.modal.draft[t.getAttribute("data-field")]=t.value; return; }
+  if(kind==="metafield"){
+    const field=t.getAttribute("data-field");
+    UI.modal.draft[field]=t.value;
+    if(field==="tipo"){ rerender(); }
+    return;
+  }
+  if(kind==="indfield"){ UI.modal.draft[t.getAttribute("data-field")]=t.value; return; }
+
+  if(action==="docTipo"){ const ns=t.getAttribute("data-ns"); UI.docDrafts[ns]=UI.docDrafts[ns]||{}; UI.docDrafts[ns].tipo=t.value; return; }
+  if(action==="docNome"){ const ns=t.getAttribute("data-ns"); UI.docDrafts[ns]=UI.docDrafts[ns]||{}; UI.docDrafts[ns].nome=t.value; return; }
+});
+
+document.addEventListener("change",function(e){
+  const t=e.target;
+  const action=t.getAttribute("data-action");
+  if(["carteiraOrigem","vendasStatus","vendasOrigem","vendasPlano","relOrigem","relPlano","relStatus","setCargo"].includes(action)){ /* handled in input already for selects triggers change too - noop */ }
+});
+
+document.addEventListener("click",function(e){
+  const th=e.target.closest("th[data-sortkey]");
+  if(!th) return;
+  const table=th.getAttribute("data-table"); const key=th.getAttribute("data-sortkey");
+  const cur=UI.sort[table];
+  UI.sort[table]=(cur&&cur.key===key)?{key,dir:cur.dir==="asc"?"desc":"asc"}:{key,dir:"asc"};
+  rerender();
+});
+
+function handleTableEdit(table,id){
+  if(table==="carteira"){ const a=DB.associados.find(x=>x.id===id); openModal({kind:"crud",title:"Editar associado",schema:ASSOCIADO_SCHEMA,draft:{...a},coll:"associados",requiredKey:"nomeCompleto",wide:true}); }
+  else if(table==="vendas"){ const v=DB.vendas.find(x=>x.id===id); openModal({kind:"crud",title:"Editar venda",schema:VENDA_SCHEMA,draft:{...v},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); }
+  else if(table==="despesas"){ const d=DB.despesas.find(x=>x.id===id); openModal({kind:"crud",title:"Editar lançamento",schema:DESPESA_SCHEMA,draft:{...d},coll:"despesas",requiredKey:"competencia"}); }
+  else if(table==="metas"){ const m=DB.metas.find(x=>x.id===id); openModal({kind:"meta",draft:{...m}}); }
+  else if(table==="indicacoes"){ const i=DB.indicacoes.find(x=>x.id===id); openModal({kind:"indicacao",draft:{...i},modoManual:!i.indicadoId&&!!i.indicadoNomeManual}); }
+  else if(table==="consultores"){ const c=DB.equipe.find(x=>x.id===id); openModal({kind:"crud",title:"Editar consultor",schema:CONSULTOR_SCHEMA,draft:{...c},coll:"equipe",requiredKey:"nome",wide:true}); }
+  else if(table==="producao"){ const p=DB.producaoEquipe.find(x=>x.id===id); openModal({kind:"crud",title:"Editar produção",schema:PRODUCAO_SCHEMA,draft:{...p},coll:"producaoEquipe",requiredKey:"consultorId",wide:true}); }
+}
+function handleTableDelete(table,id){
+  if(table==="carteira"){
+    const temVendas=DB.vendas.some(v=>v.associadoId===id);
+    if(temVendas){ alert("Este associado possui vendas (placas) vinculadas e não pode ser excluído, para não perder o histórico. Remova ou reatribua as vendas primeiro."); return; }
+    collRemove("associados",id);
+  }else if(table==="vendas"){ collRemove("vendas",id); }
+  else if(table==="despesas"){ collRemove("despesas",id); }
+  else if(table==="metas"){ collRemove("metas",id); }
+  else if(table==="indicacoes"){ collRemove("indicacoes",id); }
+  else if(table==="consultores"){ collRemove("equipe",id); }
+  else if(table==="producao"){ collRemove("producaoEquipe",id); }
+}
+
+/* ---------------- INIT ---------------- */
+loadAll();
+</script>
+</body>
+</html>
