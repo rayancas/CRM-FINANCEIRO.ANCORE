@@ -124,14 +124,18 @@ const K={
   equipe:"ancore:crm:equipe", producaoEquipe:"ancore:crm:producao-equipe",
 };
 
-const ORIGEM_OPTS=["Indicação","Instagram","Google","WhatsApp","Prospecção","Cliente antigo","Outros"];
+const ORIGEM_OPTS=["Indicação","Prospecção","Network","Procurou","Parceria","Redes Sociais","Tráfego Pago"];
 const PAGAMENTO_OPTS=["Boleto","Pix","Cartão de crédito","Débito automático"];
 const PLANO_OPTS=["Bronze","Prata","Ouro"];
-const VENDA_STATUS_OPTS=["Ativa","Ativa Pendente","Inadimplente","Cancelada"];
+const VENDA_STATUS_OPTS=["Ativa","Ativa Pendente","Inadimplente","Cancelada","Inativa"];
 const INDIC_STATUS_OPTS=["Pendente","Pago"];
 const CONSULTORIA_VALORES=[10,20,30,40,50];
 const CARGO_OPTS=["Consultor","Líder","Gestor"];
 const STATUS_EQUIPE_OPTS=["Ativo","Inativo"];
+const TABELA_ACEITACAO_OPTS=["Normal","Especial","Flat"];
+const BRINDE_SEMANA_OPTS=["15 Dias de Carro Reserva","Cobertura de R$ 100.000 para Terceiros","10% de Desconto na Cota de Participação","Guincho de 200 km"];
+const ADESAO_STATUS_OPTS=["Pendente","Paga"];
+const STATUS_NAO_ATIVA=["Cancelada","Inativa"]; // status em que "Último Boleto Pago" pode ser editado
 
 const PLANO_FAIXAS=[
   {nivel:"Consultor",min:0,premiacao:0},
@@ -202,6 +206,11 @@ function computePortfolioMetrics(vendas){
   return {ativas,placasAtivas,consultoriasAtivas,consultoriasVendidas,totalPlacasVendidas,ticketMedioGeral,ativaPendentes,inadimplentes,cancelados};
 }
 function vendasDoMes(vendas,mes){ return vendas.filter(v=>(v.data||"").startsWith(mes)); }
+// Regra: uma adesão só compõe os indicadores financeiros no mês em que foi EFETIVAMENTE PAGA.
+// Compatibilidade com dados antigos: se a venda já tem valorAdesao mas nunca recebeu o novo campo adesaoStatus, considera-se paga (para não zerar o histórico já lançado).
+function adesaoEstaPaga(v){ return v.adesaoStatus ? v.adesaoStatus==="Paga" : !!toNumber(v.valorAdesao); }
+function mesDaAdesaoPaga(v){ return (v.adesaoDataEfetiva || v.data || "").slice(0,7); }
+function adesaoPagaNoMes(v,mes){ return adesaoEstaPaga(v) && mesDaAdesaoPaga(v)===mes; }
 function jaFaturandoEm(venda,mesRef){ const primeiroBoleto=getPrimeiroBoleto(venda); if(!primeiroBoleto) return false; return primeiroBoleto<=`${mesRef}-31`; }
 function computePremiacaoMensal(qtdPlacas){ let valor=0; for(const f of PREMIACAO_MENSAL_FAIXAS){ if(qtdPlacas>=f.min) valor=f.valor; } return valor; }
 function computePremiacaoSemanalDoMes(vendas,mes){
@@ -224,10 +233,13 @@ function computePlanoCarreiraDoMes(vendas,producaoEquipe,consultores,mes){
 }
 function computeFinanceiroMes(vendas,producaoEquipe,indicacoes,config,mes,consultores){
   const mesAnterior=prevMonth(mes);
-  const vMes=vendasDoMes(vendas,mes);
-  const adesoesMes=vMes.reduce((s,v)=>s+toNumber(v.valorAdesao),0);
-  const totalAdesoesQtd=vMes.length;
+  const vendasAdesaoPagaNoMes=vendas.filter(v=>adesaoPagaNoMes(v,mes));
+  const adesoesMes=vendasAdesaoPagaNoMes.reduce((s,v)=>s+toNumber(v.valorAdesao),0);
+  const totalAdesoesQtd=vendasAdesaoPagaNoMes.length;
   const ticketMedio=totalAdesoesQtd?adesoesMes/totalAdesoesQtd:0;
+  // Adesões pendentes (previstas, ainda não pagas) — usadas no calendário/alertas
+  const adesoesPendentes=vendas.filter(v=>!adesaoEstaPaga(v) && v.adesaoDataPrevista);
+  const adesaoPrevistaTotal=adesoesPendentes.reduce((s,v)=>s+toNumber(v.valorAdesao),0);
   const vendasMesAnterior=vendasDoMes(vendas,mesAnterior);
   const placasVendidasMesAnterior=vendasMesAnterior.length;
   const premiacaoMensal=computePremiacaoMensal(placasVendidasMesAnterior);
@@ -252,7 +264,7 @@ function computeFinanceiroMes(vendas,producaoEquipe,indicacoes,config,mes,consul
   const planoDeCarreiraPrevisto=faixa.premiacao>0&&requisitoEquipeOk?faixa.premiacao:0;
   const indicacoesPagas=indicacoes.filter(i=>i.status==="Pago"&&(i.data||"").startsWith(mes)).reduce((s,i)=>s+toNumber(i.valorComissao),0);
   const totalPrevisto=adesoesMes+premiacaoMensal+premiacaoSemanal+consultoriaPrevista+planoDeCarreiraPrevisto+recorrenciaPrevista-indicacoesPagas;
-  return {mes,mesAnterior,adesoesMes,totalAdesoesQtd,ticketMedio,premiacaoMensal,placasVendidasMesAnterior,premiacaoSemanal,semanalDetalhe:semanal.weeks,
+  return {mes,mesAnterior,adesoesMes,totalAdesoesQtd,ticketMedio,adesoesPendentes,adesaoPrevistaTotal,premiacaoMensal,placasVendidasMesAnterior,premiacaoSemanal,semanalDetalhe:semanal.weeks,
     consultoriaPrevista,consultoriaElegivel,consultoriasAtivasTotal,minVendasConsultoria,recorrenciaPrevista,recorrenciaElegivel,placasAtivasMesAnterior,recorrenciaBlocos,
     producaoPessoal,producaoEquipeTotal,producaoTotal,elegiveisEquipe,requisitoEquipeOk,faixa,planoDeCarreiraPrevisto,indicacoesPagas,totalPrevisto};
 }
@@ -272,12 +284,17 @@ const VENDA_SCHEMA=[
   {key:"veiculoModelo",label:"Modelo do veículo"},
   {key:"veiculoPlaca",label:"Placa",placeholder:"ABC1D23"},
   {key:"plano",label:"Plano",type:"select",options:PLANO_OPTS},
+  {key:"tabelaAceitacao",label:"Tabela de Aceitação",type:"select",options:TABELA_ACEITACAO_OPTS},
   {key:"status",label:"Status",type:"select",options:VENDA_STATUS_OPTS},
+  {key:"brindeSemana",label:"Brinde da Semana",type:"select",options:BRINDE_SEMANA_OPTS},
   {key:"valorAdesao",label:"Valor da adesão (R$)",type:"number",placeholder:"249,90"},
+  {key:"adesaoStatus",label:"Status do pagamento da adesão",type:"select",options:ADESAO_STATUS_OPTS},
+  {key:"adesaoDataPrevista",label:"Data prevista de pagamento da adesão",type:"date"},
+  {key:"adesaoDataEfetiva",label:"Data efetiva do pagamento da adesão",type:"date"},
   {key:"consultoria",label:"Consultoria especializada (R$)",type:"select",options:CONSULTORIA_VALORES.map(String)},
   {key:"primeiraMensalidade",label:"Valor da 1ª mensalidade (R$)",type:"number",placeholder:"179,50"},
   {key:"primeiroBoletoManual",label:"Data do 1º boleto (editar apenas se diferente da regra automática)",type:"date"},
-  {key:"dataUltimoBoletoPago",label:"Data do último boleto pago (cancelamento/inadimplência)",type:"date"},
+  {key:"dataUltimoBoletoPago",label:"Data do último boleto pago",type:"date",readonlyWhen:(d)=>!STATUS_NAO_ATIVA.includes(d.status),readonlyNote:"Só pode ser editado quando a placa está Cancelada ou Inativa."},
   {key:"observacoes",label:"Observações",type:"textarea",span:2},
 ];
 const DESPESA_SCHEMA=[
@@ -533,24 +550,27 @@ function fieldHTML(f,draft,lookupOptions){
   const val=draft[f.key]??"";
   const span=f.span?`grid-column:span ${f.span}`:"";
   const id=`field-${f.key}`;
+  const isReadonly=typeof f.readonlyWhen==="function" && f.readonlyWhen(draft);
+  const lockAttr=isReadonly?"disabled":"";
   let control;
   if(f.type==="lookup"){
     const opts=(lookupOptions&&lookupOptions[f.lookupName])||[];
-    control=`<select class="input" id="${id}" data-field="${f.key}" data-kind="modalfield">
+    control=`<select class="input" id="${id}" data-field="${f.key}" data-kind="modalfield" ${lockAttr}>
       <option value="">Selecionar…</option>
       ${opts.map(o=>`<option value="${esc(o.id)}" ${val===o.id?'selected':''}>${esc(o.label)}${o.sub?` (${esc(o.sub)})`:""}</option>`).join("")}
     </select>`;
   }else if(f.type==="select"){
-    control=`<select class="input" id="${id}" data-field="${f.key}" data-kind="modalfield">
+    control=`<select class="input" id="${id}" data-field="${f.key}" data-kind="modalfield" ${lockAttr}>
       <option value="">Selecionar…</option>
       ${f.options.map(o=>`<option value="${esc(o)}" ${val===o?'selected':''}>${esc(o)}</option>`).join("")}
     </select>`;
   }else if(f.type==="textarea"){
-    control=`<textarea class="input" id="${id}" data-field="${f.key}" data-kind="modalfield" rows="3">${esc(val)}</textarea>`;
+    control=`<textarea class="input" id="${id}" data-field="${f.key}" data-kind="modalfield" rows="3" ${lockAttr}>${esc(val)}</textarea>`;
   }else{
-    control=`<input class="input" id="${id}" type="${f.type||'text'}" ${f.type==='number'?'step="0.01" inputmode="decimal"':''} placeholder="${esc(f.placeholder||'')}" value="${esc(val)}" data-field="${f.key}" data-kind="modalfield" />`;
+    control=`<input class="input" id="${id}" type="${f.type||'text'}" ${f.type==='number'?'step="0.01" inputmode="decimal"':''} placeholder="${esc(f.placeholder||'')}" value="${esc(val)}" data-field="${f.key}" data-kind="modalfield" ${lockAttr} />`;
   }
-  return `<label style="display:flex;flex-direction:column;gap:6px;${span}"><span class="field-label">${esc(f.label)}</span>${control}</label>`;
+  const note=isReadonly&&f.readonlyNote?`<span style="font-size:10.5px;color:${MUTED};">${esc(f.readonlyNote)}</span>`:"";
+  return `<label style="display:flex;flex-direction:column;gap:6px;${span}"><span class="field-label">${esc(f.label)}</span>${control}${note}</label>`;
 }
 function schemaFormHTML(schema,draft,lookupOptions){
   return `<div class="grid-2col">${schema.map(f=>fieldHTML(f,draft,lookupOptions)).join("")}</div>`;
@@ -631,13 +651,19 @@ function renderMetaModal(m){
             <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Tipo</span>
               <select class="input" id="meta-tipo" data-kind="metafield" data-field="tipo">
                 <option value="mensal" ${d.tipo==='mensal'?'selected':''}>mensal</option>
+                <option value="semestral" ${d.tipo==='semestral'?'selected':''}>semestral</option>
                 <option value="anual" ${d.tipo==='anual'?'selected':''}>anual</option>
               </select></label>
             <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Período</span>
-              <input class="input" id="meta-periodo" type="${d.tipo==='anual'?'number':'month'}" placeholder="${d.tipo==='anual'?'2026':''}" value="${esc(d.periodo||'')}" data-kind="metafield" data-field="periodo" /></label>
+              ${d.tipo==='anual'
+                ? `<input class="input" id="meta-periodo" type="number" placeholder="2026" value="${esc(d.periodo||'')}" data-kind="metafield" data-field="periodo" />`
+                : d.tipo==='semestral'
+                ? `<input class="input" id="meta-periodo" type="text" placeholder="2026-S1" value="${esc(d.periodo||'')}" data-kind="metafield" data-field="periodo" />`
+                : `<input class="input" id="meta-periodo" type="month" value="${esc(d.periodo||'')}" data-kind="metafield" data-field="periodo" />`}
+              ${d.tipo==='semestral'?`<span style="font-size:10.5px;color:${MUTED}">Formato: AAAA-S1 (jan-jun) ou AAAA-S2 (jul-dez)</span>`:""}
             ${metaNumField('metaFinanceira','Meta financeira (R$)',d)}
-            ${metaNumField('metaVendas','Meta de vendas',d)}
-            ${metaNumField('metaPlacas','Meta de placas',d)}
+            ${metaNumField('metaVendas','Meta da Equipe',d)}
+            ${metaNumField('metaPlacas','Meta Pessoal',d)}
             ${metaNumField('metaRecorrencia','Meta de recorrência (R$)',d)}
             ${metaNumField('metaConsultoria','Meta de consultoria (R$)',d)}
             ${metaNumField('metaAdesao','Meta de adesão (R$)',d)}
@@ -762,7 +788,10 @@ function renderDashboard(){
   const faltamProximoNivel=proximoNivel?Math.max(0,proximoNivel.min-planoAtual.producaoTotal):0;
 
   const aniversariantesHoje=associados.filter(a=>a.dataNascimento&&daysUntilBirthday(a.dataNascimento)===0);
+  const aniversariantesProx7Dias=associados.filter(a=>a.dataNascimento&&daysUntilBirthday(a.dataNascimento)<=7).map(a=>({...a,_dias:daysUntilBirthday(a.dataNascimento)})).sort((a,b)=>a._dias-b._dias);
   const boletosProximos=vendas.filter(v=>getPrimeiroBoleto(v)>=hoje&&getPrimeiroBoleto(v)<=addDays(hoje,7));
+  const adesoesAtrasadas=(finPeriodo.adesoesPendentes||[]).filter(v=>v.adesaoDataPrevista<hoje);
+  const adesoesVencendoEm7=(finPeriodo.adesoesPendentes||[]).filter(v=>v.adesaoDataPrevista>=hoje&&v.adesaoDataPrevista<=addDays(hoje,7));
   const diasNoMes=new Date(Number(mes.slice(0,4)),Number(mes.slice(5,7)),0).getDate();
   const diaAtual=new Date().getDate();
   const metaEmRisco=metaMes&&percentualMeta!==null&&(diaAtual/diasNoMes)*100-percentualMeta>15;
@@ -776,10 +805,15 @@ function renderDashboard(){
   const lembretesProximos=lembretes.filter(l=>l.data>hoje&&l.data<=addDays(hoje,3));
 
   const alertas=[];
-  if(aniversariantesHoje.length) alertas.push({tone:"green",texto:`${aniversariantesHoje.length} aniversariante(s) hoje: ${aniversariantesHoje.map(a=>a.nomeCompleto).join(", ")}`});
+  aniversariantesProx7Dias.forEach(a=>{
+    if(a._dias===0) alertas.push({tone:"green",texto:`🎉 Hoje é aniversário de ${a.nomeCompleto}`});
+    else alertas.push({tone:"gray",texto:`📅 Daqui a ${a._dias} dia${a._dias===1?"":"s"} — aniversário de ${a.nomeCompleto}`});
+  });
   if(tarefasHoje.length) alertas.push({tone:"green",texto:`${tarefasHoje.length} tarefa(s) de pós-venda para hoje`});
   if(lembretesProximos.length) alertas.push({tone:"amber",texto:`${lembretesProximos.length} lembrete(s) de pós-venda nos próximos 3 dias`});
   if(boletosProximos.length) alertas.push({tone:"amber",texto:`${boletosProximos.length} primeiro(s) boleto(s) vencendo nos próximos 7 dias`});
+  if(adesoesAtrasadas.length) alertas.push({tone:"red",texto:`${adesoesAtrasadas.length} adesão(ões) com pagamento previsto em atraso`});
+  if(adesoesVencendoEm7.length) alertas.push({tone:"amber",texto:`${adesoesVencendoEm7.length} adesão(ões) pendente(s) com vencimento nos próximos 7 dias`});
   datasCalendario.forEach(c=>{
     if(c.dataPagamento>=hoje&&c.dataPagamento<=addDays(hoje,7)) alertas.push({tone:"gray",texto:`Pagamento de ${c.label} previsto para ${formatDateBR(c.dataPagamento)}`});
     if(c.dataNf>=hoje&&c.dataNf<=addDays(hoje,3)) alertas.push({tone:"amber",texto:`Envio da nota fiscal de ${c.label} até ${formatDateBR(c.dataNf)}`});
@@ -822,11 +856,11 @@ function renderDashboard(){
           <div style="height:10px;background:${SURFACE_ALT};border-radius:999px;overflow:hidden;"><div style="width:${Math.min(100,percentualMeta)}%;height:100%;background:${RED};"></div></div>
         </div>
         ${metaPlacasPct!==null?`<div style="margin-bottom:14px;">
-          <div style="display:flex;justify-content:space-between;font-size:12.5px;color:${MUTED};margin-bottom:6px;"><span>Barra de produção</span><span>${placasRealizadasMes} Placas / ${toNumber(metaMes.metaPlacas)} Placas</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:12.5px;color:${MUTED};margin-bottom:6px;"><span>Meta Pessoal</span><span>${placasRealizadasMes} Placas / ${toNumber(metaMes.metaPlacas)} Placas</span></div>
           <div style="height:10px;background:${SURFACE_ALT};border-radius:999px;overflow:hidden;"><div style="width:${metaPlacasPct}%;height:100%;background:#5B8DEF;"></div></div>
         </div>`:""}
         ${metaEquipePct!==null?`<div style="margin-bottom:16px;">
-          <div style="display:flex;justify-content:space-between;font-size:12.5px;color:${MUTED};margin-bottom:6px;"><span>Meta de vendas da equipe</span><span>${producaoEquipeMesAtual} / ${toNumber(metaMes.metaVendas)} Placas · ${metaEquipePct.toFixed(0)}%</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:12.5px;color:${MUTED};margin-bottom:6px;"><span>Meta da Equipe</span><span>${producaoEquipeMesAtual} / ${toNumber(metaMes.metaVendas)} Placas · ${metaEquipePct.toFixed(0)}%</span></div>
           <div style="height:10px;background:${SURFACE_ALT};border-radius:999px;overflow:hidden;"><div style="width:${metaEquipePct}%;height:100%;background:${GREEN};"></div></div>
         </div>`:""}
         <div style="display:flex;gap:8px;">
@@ -925,22 +959,22 @@ function drawDashboardCharts(){
 
   safeChart("chartReceita",(c)=>new Chart(c,{type:"bar",data:{labels:series.map(s=>s.mes),datasets:[{data:series.map(s=>s.receita),backgroundColor:RED,borderRadius:4}]},options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:(ctx)=>formatBRL(ctx.parsed.y)}}},scales:commonScales,responsive:true,maintainAspectRatio:false}}));
 
-  safeChart("chartVendas",(c)=>new Chart(c,{type:"bar",data:{labels:series.map(s=>s.mes),datasets:[{data:series.map(s=>s.vendasQtd),backgroundColor:"#5B8DEF",borderRadius:4}]},options:{plugins:{legend:{display:false}},scales:commonScales,responsive:true,maintainAspectRatio:false}}));
+  safeChart("chartVendas",(c)=>new Chart(c,{type:"bar",data:{labels:series.map(s=>s.mes),datasets:[{data:series.map(s=>s.vendasQtd),backgroundColor:"#5B8DEF",borderRadius:4}]},options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:(ctx)=>`${ctx.parsed.y} venda${ctx.parsed.y===1?"":"s"}`}}},interaction:{mode:"index",intersect:false},scales:commonScales,responsive:true,maintainAspectRatio:false}}));
 
   safeChart("chartConsultoria",(c)=>new Chart(c,{type:"line",data:{labels:series.map(s=>s.mes),datasets:[{data:series.map(s=>s.consultoria),borderColor:GREEN,backgroundColor:GREEN,tension:.3,pointRadius:0,borderWidth:2.5}]},options:{plugins:{legend:{display:false},tooltip:{callbacks:{label:(ctx)=>formatBRL(ctx.parsed.y)}}},scales:commonScales,responsive:true,maintainAspectRatio:false}}));
 
   safeChart("chartCarteira",(c)=>new Chart(c,{type:"line",data:{labels:carteiraPorMes.map(s=>s.mes),datasets:[
     {label:"Total de vendas",data:carteiraPorMes.map(s=>s.totalVendas),borderColor:"#5B8DEF",backgroundColor:"#5B8DEF",tension:.3,pointRadius:0,borderWidth:2.5},
     {label:"Placas ativas",data:carteiraPorMes.map(s=>s.placasAtivas),borderColor:RED,backgroundColor:RED,tension:.3,pointRadius:0,borderWidth:2.5},
-  ]},options:{plugins:{legend:{labels:{color:muted,font:{size:12}}}},scales:commonScales,responsive:true,maintainAspectRatio:false}}));
+  ]},options:{plugins:{legend:{labels:{color:muted,font:{size:12}}},tooltip:{callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${ctx.parsed.y}`}}},interaction:{mode:"index",intersect:false},scales:commonScales,responsive:true,maintainAspectRatio:false}}));
 
   safeChart("chartProducao",(c)=>new Chart(c,{type:"bar",data:{labels:series.map(s=>s.mes),datasets:[
     {label:"Pessoal",data:series.map(s=>s.producaoPessoal),backgroundColor:RED,borderRadius:4},
     {label:"Equipe",data:series.map(s=>s.producaoEquipe),backgroundColor:"#5B8DEF",borderRadius:4},
-  ]},options:{plugins:{legend:{labels:{color:muted,font:{size:12}}}},scales:commonScales,responsive:true,maintainAspectRatio:false}}));
+  ]},options:{plugins:{legend:{labels:{color:muted,font:{size:12}}},tooltip:{callbacks:{label:(ctx)=>{const total=series[ctx.dataIndex].producaoPessoal+series[ctx.dataIndex].producaoEquipe;const pct=total?((ctx.parsed.y/total)*100).toFixed(0):0;return `${ctx.dataset.label}: ${ctx.parsed.y} placas (${pct}%)`;}}}},interaction:{mode:"index",intersect:false},scales:commonScales,responsive:true,maintainAspectRatio:false}}));
 
   if(vendasPorOrigem.length>0){
-    safeChart("chartOrigem",(c)=>new Chart(c,{type:"pie",data:{labels:vendasPorOrigem.map(o=>o.name),datasets:[{data:vendasPorOrigem.map(o=>o.value),backgroundColor:PIE_COLORS}]},options:{plugins:{legend:{position:"bottom",labels:{color:muted,font:{size:12}}}},responsive:true,maintainAspectRatio:false}}));
+    safeChart("chartOrigem",(c)=>new Chart(c,{type:"pie",data:{labels:vendasPorOrigem.map(o=>o.name),datasets:[{data:vendasPorOrigem.map(o=>o.value),backgroundColor:PIE_COLORS}]},options:{plugins:{legend:{position:"bottom",labels:{color:muted,font:{size:12}}},tooltip:{callbacks:{label:(ctx)=>{const total=vendasPorOrigem.reduce((s,o)=>s+o.value,0);const pct=total?((ctx.parsed/total)*100).toFixed(0):0;return `${ctx.label}: ${ctx.parsed} (${pct}%)`;}}}},responsive:true,maintainAspectRatio:false}}));
   }
 }
 
@@ -960,6 +994,9 @@ function renderCarteira(){
     {key:"placas",label:"Placas",render:r=>badge(`${placasCount(r.id)} placa${placasCount(r.id)===1?"":"s"}`,placasCount(r.id)>0?"green":"gray")},
   ];
   return `<div style="display:flex;flex-direction:column;gap:16px;">
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+      ${kpiCard("users","Total de associados cadastrados",DB.associados.length,{accent:RED_DARK})}
+    </div>
     <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;">
       <div style="display:flex;gap:10px;flex:1;flex-wrap:wrap;">
         <div style="position:relative;flex:1;min-width:220px;max-width:340px;">
@@ -1176,22 +1213,57 @@ function renderVendas(){
 }
 
 /* ---------------- METAS ---------------- */
+function mesesDoPeriodoMeta(tipo,periodo){
+  if(!periodo) return [];
+  if(tipo==="mensal") return [periodo];
+  if(tipo==="anual"){ const y=String(periodo); return Array.from({length:12},(_,i)=>`${y}-${String(i+1).padStart(2,"0")}`); }
+  if(tipo==="semestral"){
+    const m=String(periodo).match(/^(\d{4})-S([12])$/);
+    if(!m) return [];
+    const y=m[1], startMonth=m[2]==="1"?1:7;
+    return Array.from({length:6},(_,i)=>`${y}-${String(startMonth+i).padStart(2,"0")}`);
+  }
+  return [];
+}
+function resultadoDaMeta(meta){
+  const meses=mesesDoPeriodoMeta(meta.tipo,meta.periodo);
+  return meses.reduce((s,m)=>s+computeFinanceiroMes(DB.vendas,DB.producaoEquipe,DB.indicacoes,DB.config,m,DB.equipe).totalPrevisto,0);
+}
+function currentSemesterPeriodo(){ const d=new Date(); return `${d.getFullYear()}-S${d.getMonth()<6?1:2}`; }
+function metaProgressoCard(titulo,meta){
+  if(!meta) return `<div class="card" style="opacity:.6;"><div class="section-title" style="margin-bottom:6px;">${esc(titulo)}</div><div style="font-size:12.5px;color:${MUTED}">Nenhuma meta cadastrada para o período atual.</div></div>`;
+  const resultado=resultadoDaMeta(meta);
+  const alvo=toNumber(meta.metaFinanceira);
+  const pct=alvo?Math.min(999,(resultado/alvo)*100):0;
+  return `<div class="card">
+    <div class="section-title" style="margin-bottom:10px;">${esc(titulo)}<span style="font-size:18px;font-weight:800;color:${RED}">${pct.toFixed(0)}%</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:12.5px;color:${MUTED};margin-bottom:6px;"><span>Resultado atual</span><span>${formatBRL(resultado)} / ${formatBRL(alvo)}</span></div>
+    <div style="height:10px;background:${SURFACE_ALT};border-radius:999px;overflow:hidden;"><div style="width:${Math.min(100,pct)}%;height:100%;background:${RED};"></div></div>
+  </div>`;
+}
 function renderMetas(){
   const sorted=[...DB.metas].sort((a,b)=>(b.periodo||"").localeCompare(a.periodo||""));
   const columns=[
     {key:"periodo",label:"Período",render:r=>`<b>${r.tipo==="mensal"?monthLabel(r.periodo):esc(r.periodo)}</b>`},
     {key:"tipo",label:"Tipo",render:r=>esc(r.tipo)},
     {key:"metaFinanceira",label:"Meta financeira",render:r=>formatBRL(toNumber(r.metaFinanceira))},
-    {key:"metaVendas",label:"Meta de vendas",render:r=>esc(r.metaVendas||"")},
-    {key:"metaPlacas",label:"Meta de placas",render:r=>esc(r.metaPlacas||"")},
+    {key:"metaVendas",label:"Meta da Equipe",render:r=>esc(r.metaVendas||"")},
+    {key:"metaPlacas",label:"Meta Pessoal",render:r=>esc(r.metaPlacas||"")},
     {key:"progresso",label:"Progresso",render:r=>{
-      if(r.tipo!=="mensal") return "—";
-      const fin=computeFinanceiroMes(DB.vendas,DB.producaoEquipe,DB.indicacoes,DB.config,r.periodo,DB.equipe);
-      const pct=toNumber(r.metaFinanceira)?(fin.totalPrevisto/toNumber(r.metaFinanceira))*100:0;
+      const resultado=resultadoDaMeta(r);
+      const pct=toNumber(r.metaFinanceira)?(resultado/toNumber(r.metaFinanceira))*100:0;
       return `${pct.toFixed(0)}%`;
     }},
   ];
+  const metaMensalAtual=DB.metas.find(m=>m.tipo==="mensal"&&m.periodo===currentMonth());
+  const metaSemestralAtual=DB.metas.find(m=>m.tipo==="semestral"&&m.periodo===currentSemesterPeriodo());
+  const metaAnualAtual=DB.metas.find(m=>m.tipo==="anual"&&String(m.periodo)===String(new Date().getFullYear()));
   return `<div style="display:flex;flex-direction:column;gap:16px;">
+    <div class="grid-3col" style="grid-template-columns:repeat(3,1fr);">
+      ${metaProgressoCard("Meta Mensal",metaMensalAtual)}
+      ${metaProgressoCard("Meta Semestral",metaSemestralAtual)}
+      ${metaProgressoCard("Meta Anual",metaAnualAtual)}
+    </div>
     <div style="display:flex;justify-content:flex-end;"><button class="btn-primary" data-action="novaMeta">${ic('plus',15)} Nova meta</button></div>
     ${dataTable("metas",columns,sorted,{onEdit:true,onDelete:true,emptyText:"Nenhuma meta cadastrada."})}
   </div>`;
@@ -1557,7 +1629,7 @@ document.addEventListener("click",function(e){
   if(action==="rowclick" && t.getAttribute("data-table")==="carteira"){ UI.selectedAssociadoId=t.getAttribute("data-id"); rerender(); return; }
 
   /* Ficha */
-  if(action==="novaVendaFicha"){ openModal({kind:"crud",title:"Nova venda",schema:VENDA_SCHEMA,draft:{associadoId:t.getAttribute("data-id")},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); return; }
+  if(action==="novaVendaFicha"){ openModal({kind:"crud",title:"Nova venda",schema:VENDA_SCHEMA,draft:{associadoId:t.getAttribute("data-id"),tabelaAceitacao:"Normal",adesaoStatus:"Pendente",status:"Ativa"},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); return; }
   if(action==="editVendaFicha"){ const v=DB.vendas.find(x=>x.id===t.getAttribute("data-id")); openModal({kind:"crud",title:"Editar venda",schema:VENDA_SCHEMA,draft:{...v},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); return; }
   if(action==="fichaAddContato"){
     const id=t.getAttribute("data-id"); const nota=(UI.fichaNovaNota||"").trim();
@@ -1577,7 +1649,7 @@ document.addEventListener("click",function(e){
   if(action==="pageNext" && table){ UI.page[table]=(UI.page[table]||0)+1; rerender(); return; }
 
   /* Vendas tab */
-  if(action==="novaVenda"){ if(DB.associados.length===0){ alert("Cadastre um associado na Carteira antes de lançar uma venda."); return; } openModal({kind:"crud",title:"Nova venda",schema:VENDA_SCHEMA,draft:{},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); return; }
+  if(action==="novaVenda"){ if(DB.associados.length===0){ alert("Cadastre um associado na Carteira antes de lançar uma venda."); return; } openModal({kind:"crud",title:"Nova venda",schema:VENDA_SCHEMA,draft:{tabelaAceitacao:"Normal",adesaoStatus:"Pendente",status:"Ativa"},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); return; }
   if(action==="toggleFiltrosVendas"){ UI.vendas.showFiltros=!UI.vendas.showFiltros; rerender(); return; }
   if(action==="abrirAssociadoDaVenda"){ UI.tab="carteira"; UI.selectedAssociadoId=t.getAttribute("data-id"); rerender(); return; }
 
@@ -1711,7 +1783,7 @@ document.addEventListener("input",function(e){
   if(action==="setCargo"){ persistConfig({...DB.config,meuCargo:t.value}).then(rerender); return; }
   if(action==="fichaNotaInput"){ UI.fichaNovaNota=t.value; return; } /* não rerender para não perder foco */
 
-  if(kind==="modalfield"){ UI.modal.draft[t.getAttribute("data-field")]=t.value; return; }
+  if(kind==="modalfield"){ UI.modal.draft[t.getAttribute("data-field")]=t.value; if(t.tagName==="SELECT") rerender(); return; }
   if(kind==="metafield"){
     const field=t.getAttribute("data-field");
     UI.modal.draft[field]=t.value;
