@@ -1357,18 +1357,25 @@ async function importBackupFromFile(file){
   const statusEl=document.getElementById("importStatusMsg");
   try{
     const text=await file.text();
-    const data=JSON.parse(text);
+    const parsed=JSON.parse(text);
+    // Aceita tanto o formato { associados:[...], vendas:[...], ... }
+    // quanto o formato { sistema, exportadoEm, dados:{ associados:[...], vendas:[...], ... } }
+    const data = (parsed && parsed.dados && typeof parsed.dados==="object") ? parsed.dados : parsed;
     if(!data || typeof data!=="object"){ throw new Error("Arquivo inválido."); }
     const map={associados:"associados",vendas:"vendas",despesas:"despesas",metas:"metas",indicacoes:"indicacoes",equipe:"equipe",producaoEquipe:"producaoEquipe"};
+    const resumo=[];
     for(const collName of Object.keys(map)){
-      if(Array.isArray(data[collName])) await persist(collName,data[collName]);
+      if(Array.isArray(data[collName])){
+        await persist(collName,data[collName]);
+        resumo.push(`${collName}: ${data[collName].length}`);
+      }
     }
     if(data.config && typeof data.config==="object") await persistConfig({...DEFAULT_CONFIG,...data.config});
-    if(statusEl) statusEl.innerHTML=`<span style="color:${GREEN}">Dados importados com sucesso!</span>`;
+    if(statusEl) statusEl.innerHTML=`<span style="color:${GREEN}">Dados importados com sucesso! (${resumo.join(" · ")})</span>`;
     rerender();
   }catch(e){
     console.error("Erro ao importar backup",e);
-    if(statusEl) statusEl.innerHTML=`<span style="color:${RED_DARK}">Não foi possível importar este arquivo. Verifique se é um backup gerado por este mesmo sistema.</span>`;
+    if(statusEl) statusEl.innerHTML=`<span style="color:${RED_DARK}">Não foi possível importar este arquivo. Verifique se é um backup gerado por este sistema.</span>`;
     else alert("Não foi possível importar este arquivo.");
   }
 }
