@@ -152,14 +152,11 @@ const K={
 
 const ORIGEM_OPTS=["Indicação","Prospecção","Network","Procurou","Parceria","Redes Sociais","Tráfego Pago"];
 const PAGAMENTO_OPTS=["Boleto","Pix","Cartão de crédito","Débito automático"];
-const PLANO_OPTS=["Bronze","Prata","Ouro"];
 const VENDA_STATUS_OPTS=["Ativa","Ativa Pendente","Inadimplente","Cancelada","Inativa"];
 const INDIC_STATUS_OPTS=["Pendente","Pago"];
 const CONSULTORIA_VALORES=[10,20,30,40,50];
 const CARGO_OPTS=["Consultor","Líder","Gestor"];
 const STATUS_EQUIPE_OPTS=["Ativo","Inativo"];
-const TABELA_ACEITACAO_OPTS=["Normal","Especial","Flat"];
-const BRINDE_SEMANA_OPTS=["15 Dias de Carro Reserva","Cobertura de R$ 100.000 para Terceiros","10% de Desconto na Cota de Participação","Guincho de 200 km"];
 const ADESAO_STATUS_OPTS=["Pendente","Paga"];
 const STATUS_NAO_ATIVA=["Cancelada","Inativa"]; // status em que "Último Boleto Pago" pode ser editado
 
@@ -215,6 +212,76 @@ function exportXLSX(rows,filename,sheetName){
   XLSX.utils.book_append_sheet(wb,ws,sheetName||"Dados"); XLSX.writeFile(wb,filename);
 }
 function esc(s){ return (s===null||s===undefined)?"":String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+/* ---------------- UPLOAD DE DOCUMENTOS (anexos reais) ---------------- */
+const ALLOWED_DOC_EXT=["pdf","jpg","jpeg","png","webp"];
+const ALLOWED_DOC_MIME={pdf:"application/pdf",jpg:"image/jpeg",jpeg:"image/jpeg",png:"image/png",webp:"image/webp"};
+function docExt(filename){ const m=(filename||"").toLowerCase().match(/\.([a-z0-9]+)$/); return m?m[1]:""; }
+function isAllowedDocFile(file){ return ALLOWED_DOC_EXT.includes(docExt(file.name)); }
+function readFileAsDataURL(file){ return new Promise((resolve,reject)=>{ const r=new FileReader(); r.onload=()=>resolve(r.result); r.onerror=()=>reject(r.error); r.readAsDataURL(file); }); }
+function formatBytes(n){ n=toNumber(n); if(!n) return "0 KB"; const kb=n/1024; if(kb<1024) return kb.toFixed(0)+" KB"; return (kb/1024).toFixed(1)+" MB"; }
+function getDocList(ns){
+  if(ns==="vendaDocs") return (UI.modal&&UI.modal.draft&&UI.modal.draft.documentosVeiculo)||[];
+  if(ns.startsWith("assocDocs-")){ const id=ns.replace("assocDocs-",""); const a=DB.associados.find(x=>x.id===id); return (a&&a.documentos)||[]; }
+  return [];
+}
+function setDocList(ns,list){
+  if(ns==="vendaDocs"){ UI.modal.draft.documentosVeiculo=list; rerender(); return; }
+  if(ns.startsWith("assocDocs-")){ const id=ns.replace("assocDocs-",""); const a=DB.associados.find(x=>x.id===id); if(a) collSave("associados",{...a,documentos:list}); return; }
+}
+async function handleDocFiles(ns,tipo,fileList){
+  const files=Array.from(fileList||[]);
+  if(!files.length) return;
+  const rejeitados=[];
+  const novos=[];
+  for(const file of files){
+    if(!isAllowedDocFile(file)){ rejeitados.push(file.name); continue; }
+    try{
+      const dataUrl=await readFileAsDataURL(file);
+      novos.push({id:uid(),tipo,nome:file.name,mimeType:file.type||ALLOWED_DOC_MIME[docExt(file.name)]||"application/octet-stream",size:file.size,dataUrl,data:new Date().toISOString().slice(0,10)});
+    }catch(e){ console.error("Erro ao ler arquivo",file.name,e); rejeitados.push(file.name); }
+  }
+  if(novos.length){ setDocList(ns,[...novos,...getDocList(ns)]); }
+  if(rejeitados.length){ alert(`Arquivo(s) não permitido(s) (use PDF, JPG, PNG ou WEBP): ${rejeitados.join(", ")}`); if(!novos.length) rerender(); }
+}
+async function handleDocReplace(ns,docId,fileList){
+  const file=(fileList||[])[0];
+  if(!file) return;
+  if(!isAllowedDocFile(file)){ alert("Arquivo não permitido. Use PDF, JPG, PNG ou WEBP."); return; }
+  try{
+    const dataUrl=await readFileAsDataURL(file);
+    const list=getDocList(ns).map(d=>d.id===docId?{...d,nome:file.name,mimeType:file.type||ALLOWED_DOC_MIME[docExt(file.name)]||"application/octet-stream",size:file.size,dataUrl,data:new Date().toISOString().slice(0,10)}:d);
+    setDocList(ns,list);
+  }catch(e){ console.error("Erro ao substituir arquivo",e); alert("Não foi possível ler o arquivo selecionado."); }
+}
+function docDownload(doc){
+  const a=document.createElement("a");
+  a.href=doc.dataUrl; a.download=doc.nome;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+function openDocViewer(doc){ UI.docViewer={nome:doc.nome,mimeType:doc.mimeType,dataUrl:doc.dataUrl}; rerender(); }
+function closeDocViewer(){ UI.docViewer=null; rerender(); }
+function renderDocViewer(){
+  const d=UI.docViewer;
+  if(!d) return "";
+  const isImg=(d.mimeType||"").startsWith("image/");
+  const isPdf=(d.mimeType||"").startsWith("application/pdf");
+  return `<div class="modal-overlay" data-action="closeDocViewerOverlay" style="z-index:80;">
+    <div style="background:${SURFACE};border-radius:16px;width:100%;max-width:${isImg?'900px':'860px'};max-height:92vh;display:flex;flex-direction:column;overflow:hidden;border:1px solid ${SILVER};" data-stop="1">
+      <div class="modal-head"><h2 style="color:#fff;font-size:15px;font-weight:700;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(d.nome)}</h2>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          <button class="icon-btn" style="color:${SILVER}" data-action="docViewerDownload">${ic('download',18)}</button>
+          <button class="icon-btn" style="color:${SILVER}" data-action="closeDocViewer">${ic('x',20)}</button>
+        </div>
+      </div>
+      <div style="flex:1;overflow:auto;background:#0006;display:flex;align-items:center;justify-content:center;padding:0;min-height:60vh;">
+        ${isPdf?`<iframe src="${d.dataUrl}" style="width:100%;height:80vh;border:none;background:#fff;"></iframe>`
+          :isImg?`<img src="${d.dataUrl}" style="max-width:100%;max-height:80vh;object-fit:contain;cursor:zoom-in;" onclick="this.style.transform=this.style.transform?'':'scale(1.8)';this.style.cursor=this.style.transform?'zoom-out':'zoom-in';" />`
+          :`<div style="color:${MUTED};padding:40px;text-align:center;">Pré-visualização não disponível para este tipo de arquivo.<br/>Use o botão de download acima.</div>`}
+      </div>
+    </div>
+  </div>`;
+}
 
 /* ---------------- REGRAS ANCORE / MOTOR FINANCEIRO ---------------- */
 function computePortfolioMetrics(vendas){
@@ -309,10 +376,7 @@ const VENDA_SCHEMA=[
   {key:"associadoId",label:"Associado",type:"lookup",span:2,lookupName:"associadoId"},
   {key:"veiculoModelo",label:"Modelo do veículo"},
   {key:"veiculoPlaca",label:"Placa",placeholder:"ABC1D23"},
-  {key:"plano",label:"Plano",type:"select",options:PLANO_OPTS},
-  {key:"tabelaAceitacao",label:"Tabela de Aceitação",type:"select",options:TABELA_ACEITACAO_OPTS},
   {key:"status",label:"Status",type:"select",options:VENDA_STATUS_OPTS},
-  {key:"brindeSemana",label:"Brinde da Semana",type:"select",options:BRINDE_SEMANA_OPTS},
   {key:"valorAdesao",label:"Valor da adesão (R$)",type:"number",placeholder:"249,90"},
   {key:"adesaoStatus",label:"Status do pagamento da adesão",type:"select",options:ADESAO_STATUS_OPTS},
   {key:"adesaoDataPrevista",label:"Data prevista de pagamento da adesão",type:"date"},
@@ -399,6 +463,10 @@ const ICONS={
   trendDown:'<path d="M3 7l6 6 4-4 8 8"/><path d="M15 17h6v-6"/>',
   car:'<path d="M3 13l1.5-4.5A2 2 0 0 1 6.4 7h11.2a2 2 0 0 1 1.9 1.5L21 13"/><rect x="2" y="13" width="20" height="6" rx="2"/><circle cx="7" cy="19" r="1.6"/><circle cx="17" cy="19" r="1.6"/>',
   dollar:'<circle cx="12" cy="12" r="9"/><path d="M12 6v12M15 9.5c0-1.4-1.3-2.2-3-2.2s-3 .9-3 2.2c0 3 6 1.6 6 4.5 0 1.4-1.3 2.2-3 2.2s-3-.8-3-2.2"/>',
+  eye:'<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+  file:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+  image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
+  upload:'<path d="M12 3v13"/><path d="M6 8l6-6 6 6"/><path d="M4 21h16"/>',
 };
 function ic(name,size,color){
   const s=size||15, c=color||"currentColor";
@@ -466,12 +534,12 @@ const UI={
   financeiroMes: currentMonth(),
   recorrenciaMes: currentMonth(),
   carteira:{search:"",origem:""},
-  vendas:{search:"",status:"",showFiltros:false,origem:"",plano:"",inicio:"",fim:""},
+  vendas:{search:"",status:"",showFiltros:false,origem:"",inicio:"",fim:""},
   aniversariantes:{onlyWeek:false},
-  relatorios:{origem:"",plano:"",status:"",inicio:"",fim:""},
+  relatorios:{origem:"",status:"",inicio:"",fim:""},
   sort:{}, page:{},
   fichaNovaNota:"",
-  docDrafts:{},
+  docViewer:null,
 };
 
 /* ---------------- RENDER HELPERS (preserva foco) ---------------- */
@@ -625,7 +693,7 @@ function renderCrudModal(m){
   const lookupOptions=lookupOptionsFor();
   let extra="";
   if(m.extra==="vendaDocs"){
-    extra=documentosFieldHTML("Documentos do veículo (desta venda/placa)","vendaDocs",m.draft.documentosVeiculo||[],["CRLV","Termo de Adesão","Laudo de Vistoria","Fotos da Vistoria","Outros"]);
+    extra=documentosFieldHTML("Documentos do veículo (desta venda/placa)","vendaDocs",m.draft.documentosVeiculo||[],["CRLV","Termo de Adesão","Laudo de Vistoria"]);
   }
   return `<div class="modal-overlay" data-action="overlayClose">
     <div class="modal-box ${m.wide?'wide':''}" data-stop="1">
@@ -646,21 +714,46 @@ function renderCrudModal(m){
 }
 
 function documentosFieldHTML(label,ns,docs,tipos){
-  UI.docDrafts[ns]=UI.docDrafts[ns]||{tipo:tipos[0],nome:""};
-  const d=UI.docDrafts[ns];
   return `<div>
-    <span class="field-label" style="margin-bottom:8px;">${esc(label)}</span>
-    <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-      <select class="input" style="max-width:200px" data-action="docTipo" data-ns="${ns}">${tipos.map(t=>`<option ${d.tipo===t?'selected':''}>${esc(t)}</option>`).join("")}</select>
-      <input class="input" style="flex:1;min-width:160px" placeholder="Nome do arquivo / anotação" value="${esc(d.nome)}" data-action="docNome" data-ns="${ns}" id="docnome-${ns}" />
-      <button class="btn-ghost" data-action="docAdd" data-ns="${ns}">${ic('plus',14)} Adicionar</button>
+    <span class="field-label" style="margin-bottom:10px;display:block;">${esc(label)}</span>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      ${tipos.map(tipo=>{
+        const docsOfType=docs.filter(d=>d.tipo===tipo);
+        return `<div style="border:1px solid ${SILVER};border-radius:10px;padding:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-size:12.5px;font-weight:700;">${esc(tipo)}</span>
+            <label class="btn-ghost" style="cursor:pointer;padding:6px 12px;font-size:12px;">
+              ${ic('upload',13)} Enviar
+              <input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none;" data-action="docFileInput" data-ns="${ns}" data-tipo="${esc(tipo)}" />
+            </label>
+          </div>
+          <div class="doc-dropzone" data-action="docDropzone" data-ns="${ns}" data-tipo="${esc(tipo)}" style="border:1.5px dashed ${SILVER};border-radius:8px;padding:14px;text-align:center;font-size:11.5px;color:${MUTED};margin-bottom:${docsOfType.length?'8px':'0'};transition:background .15s,border-color .15s;">
+            Arraste arquivos aqui, ou clique em "Enviar" (PDF, JPG, PNG ou WEBP)
+          </div>
+          ${docsOfType.length?`<div style="display:flex;flex-direction:column;gap:6px;">${docsOfType.map(doc=>{
+            const isImg=(doc.mimeType||"").startsWith("image/");
+            return `<div style="display:flex;justify-content:space-between;align-items:center;background:${SURFACE_ALT};border-radius:8px;padding:8px 10px;font-size:12px;gap:8px;">
+              <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+                ${ic(isImg?'image':'file',15,MUTED)}
+                <div style="min-width:0;">
+                  <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;">${esc(doc.nome)}</div>
+                  <div style="color:${MUTED};font-size:10.5px;">${formatBytes(doc.size)} · ${formatDateBR(doc.data)}</div>
+                </div>
+              </div>
+              <div style="display:flex;gap:2px;flex-shrink:0;">
+                <button class="icon-btn" title="Visualizar" data-action="docView" data-ns="${ns}" data-id="${doc.id}">${ic('eye',14)}</button>
+                <button class="icon-btn" title="Baixar" data-action="docDownload" data-ns="${ns}" data-id="${doc.id}">${ic('download',14)}</button>
+                <label class="icon-btn" title="Substituir" style="cursor:pointer;">
+                  ${ic('repeat',14)}
+                  <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none;" data-action="docReplaceInput" data-ns="${ns}" data-id="${doc.id}" />
+                </label>
+                <button class="icon-btn del" title="Excluir" data-action="docDelete" data-ns="${ns}" data-id="${doc.id}">${ic('trash',14)}</button>
+              </div>
+            </div>`;
+          }).join("")}</div>`:""}
+        </div>`;
+      }).join("")}
     </div>
-    ${docs.length===0?`<div style="color:${MUTED};font-size:12.5px;">Nenhum documento anexado.</div>`:
-      `<div style="display:flex;flex-direction:column;gap:6px;">${docs.map((doc,i)=>`
-        <div style="display:flex;justify-content:space-between;align-items:center;background:${SURFACE_ALT};border-radius:8px;padding:8px 12px;font-size:12.5px;">
-          <span><b>${esc(doc.tipo)}</b> — ${esc(doc.nome)} <span style="color:${MUTED}">· ${formatDateBR(doc.data)}</span></span>
-          <button class="icon-btn del" data-action="docRemove" data-ns="${ns}" data-idx="${i}">${ic('trash',13)}</button>
-        </div>`).join("")}</div>`}
   </div>`;
 }
 
@@ -793,7 +886,7 @@ function renderDashboard(){
 
   const n=series.length;
   const ultimo=series[n-1], penultimo=series[n-2];
-  const insightReceita=ultimo&&penultimo?trendText(ultimo.receita,penultimo.receita):"Ainda não há dados suficientes.";
+  const insightReceita=ultimo&&ultimo.receita?`A consultoria representa aproximadamente ${((ultimo.consultoria/ultimo.receita)*100).toFixed(0)}% da receita prevista deste mês.`:"Ainda não há dados suficientes.";
   const insightVendas=ultimo&&penultimo?trendText(ultimo.vendasQtd,penultimo.vendasQtd):"Ainda não há dados suficientes.";
   const ultimos3Consultoria=series.slice(-3).map(s=>s.consultoria);
   const mediaConsultoria=ultimos3Consultoria.reduce((a,b)=>a+b,0)/(ultimos3Consultoria.length||1);
@@ -870,8 +963,8 @@ function renderDashboard(){
 
     <div style="display:flex;gap:20px;flex-wrap:wrap;">
       ${kpiCard("cart","Adesões do mês",formatBRL(finPeriodo.adesoesMes),{sub:`${finPeriodo.totalAdesoesQtd} vendas`})}
-      ${kpiCard("users","Carteira",`${metrics.totalPlacasVendidas} Associados`,{sub:`${metrics.placasAtivas} Ativos`,subTone:"up"})}
-      ${kpiCard("usercog","Consultoria",formatBRL(finPeriodo.consultoriaPrevista),{sub:`${metrics.consultoriasAtivas} Consultorias Ativas`})}
+      ${kpiCard("users","Carteira",`${metrics.totalPlacasVendidas} Vendas`,{sub:`${metrics.placasAtivas} Ativas`,subTone:"up"})}
+      ${kpiCard("usercog","Consultoria",formatBRL(finPeriodo.consultoriaPrevista),{sub:`${metrics.consultoriasAtivas} Ativas`,subTone:"up"})}
       ${kpiCard("dollar","Total previsto",formatBRL(finPeriodo.totalPrevisto),{accent:GREEN})}
     </div>
 
@@ -930,7 +1023,7 @@ function renderDashboard(){
     </div>
 
     <div style="display:flex;flex-direction:column;gap:20px;">
-      ${sectionCard("Receita × Meta",chartCanvas("chartReceita"),null,insightReceita)}
+      ${sectionCard("Receita × Consultoria",chartCanvas("chartReceita"),null,insightReceita)}
       <div class="grid-charts-2-1">
         ${sectionCard("Evolução da carteira",chartCanvas("chartCarteira"),null,insightCarteira)}
         ${sectionCard("Composição da receita",chartCanvas("chartComposicao"),null,"Distribuição das fontes de receita do período selecionado.")}
@@ -1024,8 +1117,8 @@ function drawDashboardCharts(){
   const tooltipStyle={backgroundColor:"#1D222C",titleColor:"#fff",bodyColor:"#D0D3D8",borderColor:"rgba(255,255,255,.08)",borderWidth:1,padding:10,cornerRadius:8,displayColors:false};
 
   safeChart("chartReceita",(c)=>new Chart(c,{type:"line",data:{labels:series.map(s=>s.mes),datasets:[
-    {label:"Receita",data:series.map(s=>s.receita),borderColor:BLUE,backgroundColor:areaGradient(c,BLUE),fill:true,tension:.4,pointRadius:0,pointHoverRadius:5,borderWidth:2.5},
-    {label:"Meta",data:series.map(s=>s.metaValor),borderColor:GREEN,backgroundColor:GREEN,borderDash:[6,4],fill:false,tension:.4,pointRadius:0,pointHoverRadius:4,borderWidth:2,spanGaps:false},
+    {label:"Receita Total",data:series.map(s=>s.receita),borderColor:BLUE,backgroundColor:areaGradient(c,BLUE),fill:true,tension:.4,pointRadius:0,pointHoverRadius:5,borderWidth:2.5},
+    {label:"Receita de Consultoria",data:series.map(s=>s.consultoria),borderColor:GREEN,backgroundColor:areaGradient(c,GREEN),fill:true,tension:.4,pointRadius:0,pointHoverRadius:5,borderWidth:2.5},
   ]},options:{plugins:{legend:{labels:{color:muted,font:{size:12}}},tooltip:{...tooltipStyle,callbacks:{label:(ctx)=>ctx.parsed.y==null?null:`${ctx.dataset.label}: ${formatBRL(ctx.parsed.y)}`}}},interaction:{mode:"index",intersect:false},scales:commonScales,responsive:true,maintainAspectRatio:false,animation:{duration:600,easing:"easeOutQuart"}}}));
 
   safeChart("chartVendas",(c)=>new Chart(c,{type:"bar",data:{labels:series.map(s=>s.mes),datasets:[{data:series.map(s=>s.vendasQtd),backgroundColor:BLUE,borderRadius:6,maxBarThickness:32}]},options:{plugins:{legend:{display:false},tooltip:{...tooltipStyle,callbacks:{label:(ctx)=>`${ctx.parsed.y} venda${ctx.parsed.y===1?"":"s"}`}}},interaction:{mode:"index",intersect:false},scales:commonScales,responsive:true,maintainAspectRatio:false,animation:{duration:600}}}));
@@ -1104,7 +1197,7 @@ function renderFicha(associadoId){
   const placasAtivas=vendas.filter(v=>v.status==="Ativa").length;
 
   const timeline=[
-    ...vendasLigadas.map(v=>({data:v.data,texto:`Venda registrada — placa ${v.veiculoPlaca||"—"} (${v.plano||"—"})`})),
+    ...vendasLigadas.map(v=>({data:v.data,texto:`Venda registrada — placa ${v.veiculoPlaca||"—"}`})),
     ...vendasLigadas.map(v=>({data:getPrimeiroBoleto(v),texto:`1º boleto da placa ${v.veiculoPlaca||"—"}`})),
     ...contatos.map(c=>({data:c.data,texto:`Contato: ${c.nota}`})),
     ...indicacoesFeitas.map(i=>({data:i.data,texto:`Indicou ${nomeDoIndicado(i,associadoNome)}`})),
@@ -1125,7 +1218,7 @@ function renderFicha(associadoId){
       `<div style="display:flex;flex-direction:column;gap:8px;">${vendasLigadas.map(v=>`
         <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--ice,#12202B);border-radius:8px;font-size:13px;cursor:pointer;" data-action="editVendaFicha" data-id="${v.id}">
           <div><div style="font-weight:700;">${esc(v.veiculoModelo||"Veículo")} · ${esc(v.veiculoPlaca||"—")}</div>
-          <div style="color:${MUTED};font-size:11.5px;">${formatDateBR(v.data)} · Plano ${esc(v.plano||"—")} · Adesão ${formatBRL(toNumber(v.valorAdesao))}</div></div>
+          <div style="color:${MUTED};font-size:11.5px;">${formatDateBR(v.data)} · Adesão ${formatBRL(toNumber(v.valorAdesao))}</div></div>
           ${badge(v.status||"—",statusTone(v.status))}
         </div>`).join("")}</div>`,
       `<button class="btn-ghost" data-action="novaVendaFicha" data-id="${associadoId}">${ic('plus',14)} Nova venda</button>`)}
@@ -1134,7 +1227,7 @@ function renderFicha(associadoId){
         <div style="display:flex;justify-content:space-between;padding:8px 12px;background:var(--ice,#12202B);border-radius:8px;font-size:13px;">
           <span>${esc(nomeDoIndicado(i,associadoNome))}</span><span>${formatDateBR(i.data)}</span>${badge(i.status,statusTone(i.status))}
         </div>`).join("")}</div>`)}
-    ${sectionCard("Documentos do associado",documentosFieldHTML("Documentos pessoais (independem da quantidade de veículos)","assocDocs-"+associadoId,documentos,["CNH","Comprovante de residência","CPF","Documento de identidade","Outros"]))}
+    ${sectionCard("Documentos do associado",documentosFieldHTML("Documentos pessoais (independem da quantidade de veículos)","assocDocs-"+associadoId,documentos,["CNH","Comprovante de Endereço"]))}
     ${sectionCard("Histórico de contatos", `
       <div style="display:flex;gap:8px;margin-bottom:12px;">
         <input class="input" id="fichaNovaNota" placeholder="Registrar novo contato ou observação…" value="${esc(UI.fichaNovaNota)}" data-action="fichaNotaInput" />
@@ -1239,17 +1332,15 @@ function renderVendas(){
   const filtered=DB.vendas
     .filter(v=>!st.status||v.status===st.status)
     .filter(v=>!st.origem||associadoOrigem(v.associadoId)===st.origem)
-    .filter(v=>!st.plano||v.plano===st.plano)
     .filter(v=>!st.inicio||(v.data||"")>=st.inicio)
     .filter(v=>!st.fim||(v.data||"")<=st.fim)
-    .filter(v=>!s||[associadoNome(v.associadoId),v.veiculoPlaca,v.veiculoModelo,v.plano].some(x=>(x||"").toLowerCase().includes(s)))
+    .filter(v=>!s||[associadoNome(v.associadoId),v.veiculoPlaca,v.veiculoModelo].some(x=>(x||"").toLowerCase().includes(s)))
     .sort((a,b)=>(b.data||"").localeCompare(a.data||""));
   const metrics=computePortfolioMetrics(DB.vendas);
   const columns=[
     {key:"data",label:"Data",render:r=>formatDateBR(r.data)},
     {key:"associado",label:"Associado",render:r=>`<button class="btn-ghost" style="background:none;border:none;padding:0;color:${RED_DARK};font-weight:700;text-decoration:underline;font-size:13px;" data-action="abrirAssociadoDaVenda" data-id="${r.associadoId}">${esc(associadoNome(r.associadoId))}</button>`},
     {key:"veiculo",label:"Veículo",render:r=>`<div><div>${esc(r.veiculoModelo||"—")}</div><div style="font-size:11.5px;color:${MUTED};margin-top:2px;">${esc(r.veiculoPlaca||"—")}</div></div>`},
-    {key:"plano",label:"Plano",render:r=>esc(r.plano||"")},
     {key:"valorAdesao",label:"Adesão",render:r=>formatBRL(toNumber(r.valorAdesao))},
     {key:"consultoria",label:"Consultoria",render:r=>formatBRL(toNumber(r.consultoria))},
     {key:"mensalidade",label:"Mensalidade",render:r=>`<div><div>${formatBRL(toNumber(r.primeiraMensalidade))}</div><div style="font-size:11.5px;color:${MUTED};margin-top:2px;">${formatDateBR(getPrimeiroBoleto(r))}</div></div>`},
@@ -1264,7 +1355,7 @@ function renderVendas(){
       <div style="display:flex;gap:10px;flex:1;flex-wrap:wrap;">
         <div style="position:relative;flex:1;min-width:220px;max-width:320px;">
           <span style="position:absolute;left:12px;top:11px;color:${MUTED}">${ic('search',15)}</span>
-          <input class="input" style="padding-left:34px;" placeholder="Associado, placa, modelo, plano…" value="${esc(st.search)}" data-action="vendasSearch" />
+          <input class="input" style="padding-left:34px;" placeholder="Associado, placa, modelo…" value="${esc(st.search)}" data-action="vendasSearch" />
         </div>
         <select class="input" style="max-width:180px" data-action="vendasStatus">
           <option value="">Selecionar…</option>
@@ -1277,8 +1368,6 @@ function renderVendas(){
     ${st.showFiltros?`<div class="grid-3col card" style="padding:16px;">
       <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Origem</span>
         <select class="input" data-action="vendasOrigem"><option value="">Selecionar…</option>${ORIGEM_OPTS.map(o=>`<option value="${esc(o)}" ${st.origem===o?'selected':''}>${esc(o)}</option>`).join("")}</select></label>
-      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Plano</span>
-        <select class="input" data-action="vendasPlano"><option value="">Selecionar…</option>${PLANO_OPTS.map(o=>`<option value="${esc(o)}" ${st.plano===o?'selected':''}>${esc(o)}</option>`).join("")}</select></label>
       <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Data de</span><input class="input" type="date" value="${st.inicio}" data-action="vendasInicio" /></label>
       <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Data até</span><input class="input" type="date" value="${st.fim}" data-action="vendasFim" /></label>
     </div>`:""}
@@ -1470,18 +1559,15 @@ function renderRelatorios(){
   const associadoOrigem=id=>{ const a=DB.associados.find(x=>x.id===id); return a?(a.origem||""):""; };
   const filtrados=DB.vendas.filter(v=>
     (!f.origem||associadoOrigem(v.associadoId)===f.origem)&&
-    (!f.plano||v.plano===f.plano)&&
     (!f.status||v.status===f.status)&&
     (!f.inicio||(v.data||"")>=f.inicio)&&
     (!f.fim||(v.data||"")<=f.fim)
   );
-  const porPlano={}; filtrados.forEach(v=>{ const p=v.plano||"Sem plano"; porPlano[p]=(porPlano[p]||0)+1; });
   const porOrigem={}; filtrados.forEach(v=>{ const o=associadoOrigem(v.associadoId)||"Sem origem"; porOrigem[o]=(porOrigem[o]||0)+1; });
   const columns=[
     {key:"data",label:"Data",render:r=>formatDateBR(r.data)},
     {key:"associado",label:"Associado",render:r=>esc(associadoNome(r.associadoId))},
     {key:"veiculoPlaca",label:"Placa",render:r=>esc(r.veiculoPlaca||"")},
-    {key:"plano",label:"Plano",render:r=>esc(r.plano||"")},
     {key:"origem",label:"Origem",render:r=>esc(associadoOrigem(r.associadoId)||"—")},
     {key:"status",label:"Status",render:r=>badge(r.status,statusTone(r.status))},
     {key:"valorAdesao",label:"Adesão",render:r=>formatBRL(toNumber(r.valorAdesao))},
@@ -1489,15 +1575,11 @@ function renderRelatorios(){
   return `<div style="display:flex;flex-direction:column;gap:18px;">
     ${sectionCard("Filtros",`<div class="grid-3col">
       <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Origem</span><select class="input" data-action="relOrigem"><option value="">Selecionar…</option>${ORIGEM_OPTS.map(o=>`<option value="${esc(o)}" ${f.origem===o?'selected':''}>${esc(o)}</option>`).join("")}</select></label>
-      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Plano</span><select class="input" data-action="relPlano"><option value="">Selecionar…</option>${PLANO_OPTS.map(o=>`<option value="${esc(o)}" ${f.plano===o?'selected':''}>${esc(o)}</option>`).join("")}</select></label>
       <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Status</span><select class="input" data-action="relStatus"><option value="">Selecionar…</option>${VENDA_STATUS_OPTS.map(o=>`<option value="${esc(o)}" ${f.status===o?'selected':''}>${esc(o)}</option>`).join("")}</select></label>
       <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Contrato de</span><input class="input" type="date" value="${f.inicio}" data-action="relInicio" /></label>
       <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Contrato até</span><input class="input" type="date" value="${f.fim}" data-action="relFim" /></label>
     </div>`)}
-    <div class="grid-2col">
-      ${sectionCard("Ranking de planos", Object.keys(porPlano).length===0?emptyNote("Sem dados."):`<div style="display:flex;flex-direction:column;gap:8px;">${Object.entries(porPlano).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:13px;"><span>${esc(k)}</span><b>${v}</b></div>`).join("")}</div>`)}
-      ${sectionCard("Origem das vendas", Object.keys(porOrigem).length===0?emptyNote("Sem dados."):`<div style="display:flex;flex-direction:column;gap:8px;">${Object.entries(porOrigem).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:13px;"><span>${esc(k)}</span><b>${v}</b></div>`).join("")}</div>`)}
-    </div>
+    ${sectionCard("Origem das vendas", Object.keys(porOrigem).length===0?emptyNote("Sem dados."):`<div style="display:flex;flex-direction:column;gap:8px;">${Object.entries(porOrigem).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div style="display:flex;justify-content:space-between;font-size:13px;"><span>${esc(k)}</span><b>${v}</b></div>`).join("")}</div>`)}
     ${sectionCard(`Carteira filtrada (${filtrados.length})`, dataTable("relatorios",columns,filtrados,{emptyText:"Nenhum registro para os filtros selecionados."}),
       `<div style="display:flex;gap:8px;"><button class="btn-ghost" data-action="exportRelatorio">${ic('download',14)} Excel</button><button class="btn-ghost" data-action="printRelatorio">${ic('printer',14)} Imprimir / PDF</button></div>`)}
   </div>`;
@@ -1676,7 +1758,7 @@ ${esc((err&&err.stack)||"")}</pre>
   </div>`;
 
   DB._globalResults=results;
-  document.getElementById("modalRoot").innerHTML=renderModal();
+  document.getElementById("modalRoot").innerHTML=renderModal()+renderDocViewer();
 
   if(UI.tab==="dashboard" && !LOADING){ try{ drawDashboardCharts(); }catch(err){ console.error("Erro ao desenhar gráficos do dashboard",err); } }
 }
@@ -1705,7 +1787,7 @@ document.addEventListener("click",function(e){
   if(action==="rowclick" && t.getAttribute("data-table")==="carteira"){ UI.selectedAssociadoId=t.getAttribute("data-id"); rerender(); return; }
 
   /* Ficha */
-  if(action==="novaVendaFicha"){ openModal({kind:"crud",title:"Nova venda",schema:VENDA_SCHEMA,draft:{associadoId:t.getAttribute("data-id"),tabelaAceitacao:"Normal",adesaoStatus:"Pendente",status:"Ativa"},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); return; }
+  if(action==="novaVendaFicha"){ openModal({kind:"crud",title:"Nova venda",schema:VENDA_SCHEMA,draft:{associadoId:t.getAttribute("data-id"),adesaoStatus:"Pendente",status:"Ativa"},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); return; }
   if(action==="editVendaFicha"){ const v=DB.vendas.find(x=>x.id===t.getAttribute("data-id")); openModal({kind:"crud",title:"Editar venda",schema:VENDA_SCHEMA,draft:{...v},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); return; }
   if(action==="fichaAddContato"){
     const id=t.getAttribute("data-id"); const nota=(UI.fichaNovaNota||"").trim();
@@ -1725,7 +1807,7 @@ document.addEventListener("click",function(e){
   if(action==="pageNext" && table){ UI.page[table]=(UI.page[table]||0)+1; rerender(); return; }
 
   /* Vendas tab */
-  if(action==="novaVenda"){ if(DB.associados.length===0){ alert("Cadastre um associado na Carteira antes de lançar uma venda."); return; } openModal({kind:"crud",title:"Nova venda",schema:VENDA_SCHEMA,draft:{tabelaAceitacao:"Normal",adesaoStatus:"Pendente",status:"Ativa"},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); return; }
+  if(action==="novaVenda"){ if(DB.associados.length===0){ alert("Cadastre um associado na Carteira antes de lançar uma venda."); return; } openModal({kind:"crud",title:"Nova venda",schema:VENDA_SCHEMA,draft:{adesaoStatus:"Pendente",status:"Ativa"},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); return; }
   if(action==="toggleFiltrosVendas"){ UI.vendas.showFiltros=!UI.vendas.showFiltros; rerender(); return; }
   if(action==="abrirAssociadoDaVenda"){ UI.tab="carteira"; UI.selectedAssociadoId=t.getAttribute("data-id"); rerender(); return; }
 
@@ -1772,7 +1854,7 @@ document.addEventListener("click",function(e){
   /* Relatorios */
   if(action==="exportRelatorio"){
     const reg=DB._tableRegistry&&DB._tableRegistry["relatorios"];
-    const rows=(reg?reg.rows:[]).map(v=>({data:v.data,associado:associadoNome(v.associadoId),placa:v.veiculoPlaca,plano:v.plano,status:v.status,adesao:toNumber(v.valorAdesao),consultoria:toNumber(v.consultoria)}));
+    const rows=(reg?reg.rows:[]).map(v=>({data:v.data,associado:associadoNome(v.associadoId),placa:v.veiculoPlaca,status:v.status,adesao:toNumber(v.valorAdesao),consultoria:toNumber(v.consultoria)}));
     exportXLSX(rows,"ancore-relatorio-vendas.xlsx","Vendas");
     return;
   }
@@ -1799,38 +1881,29 @@ document.addEventListener("click",function(e){
     return;
   }
 
-  /* documentos field add/remove */
-  if(action==="docAdd"){
-    const ns=t.getAttribute("data-ns");
-    const draft=UI.docDrafts[ns]||{tipo:"",nome:""};
-    if(!(draft.nome||"").trim()) return;
-    const novo={tipo:draft.tipo,nome:draft.nome,data:new Date().toISOString().slice(0,10)};
-    if(ns==="vendaDocs"){
-      const list=UI.modal.draft.documentosVeiculo||[];
-      UI.modal.draft.documentosVeiculo=[novo,...list];
-    }else if(ns.startsWith("assocDocs-")){
-      const id=ns.replace("assocDocs-","");
-      const a=DB.associados.find(x=>x.id===id);
-      const list=a.documentos||[];
-      collSave("associados",{...a,documentos:[novo,...list]});
-    }
-    UI.docDrafts[ns]={tipo:draft.tipo,nome:""};
-    rerender();
+  /* documentos: visualizar / baixar / excluir */
+  if(action==="docView"){
+    const ns=t.getAttribute("data-ns"); const id=t.getAttribute("data-id");
+    const doc=getDocList(ns).find(d=>d.id===id);
+    if(doc) openDocViewer(doc);
     return;
   }
-  if(action==="docRemove"){
-    const ns=t.getAttribute("data-ns"); const idx=parseInt(t.getAttribute("data-idx"),10);
-    if(ns==="vendaDocs"){
-      const list=UI.modal.draft.documentosVeiculo||[];
-      UI.modal.draft.documentosVeiculo=list.filter((_,i)=>i!==idx);
-    }else if(ns.startsWith("assocDocs-")){
-      const id=ns.replace("assocDocs-","");
-      const a=DB.associados.find(x=>x.id===id);
-      const list=(a.documentos||[]).filter((_,i)=>i!==idx);
-      collSave("associados",{...a,documentos:list});
-      return;
-    }
-    rerender();
+  if(action==="docDownload"){
+    const ns=t.getAttribute("data-ns"); const id=t.getAttribute("data-id");
+    const doc=getDocList(ns).find(d=>d.id===id);
+    if(doc) docDownload(doc);
+    return;
+  }
+  if(action==="docDelete"){
+    const ns=t.getAttribute("data-ns"); const id=t.getAttribute("data-id");
+    if(!confirm("Excluir este documento? Essa ação não pode ser desfeita.")) return;
+    setDocList(ns,getDocList(ns).filter(d=>d.id!==id));
+    return;
+  }
+  if(action==="closeDocViewerOverlay"){ if(e.target===t) closeDocViewer(); return; }
+  if(action==="closeDocViewer"){ closeDocViewer(); return; }
+  if(action==="docViewerDownload"){
+    if(UI.docViewer) docDownload(UI.docViewer);
     return;
   }
 });
@@ -1846,11 +1919,9 @@ document.addEventListener("input",function(e){
   if(action==="vendasSearch"){ UI.vendas.search=t.value; rerender(); return; }
   if(action==="vendasStatus"){ UI.vendas.status=t.value; rerender(); return; }
   if(action==="vendasOrigem"){ UI.vendas.origem=t.value; rerender(); return; }
-  if(action==="vendasPlano"){ UI.vendas.plano=t.value; rerender(); return; }
   if(action==="vendasInicio"){ UI.vendas.inicio=t.value; rerender(); return; }
   if(action==="vendasFim"){ UI.vendas.fim=t.value; rerender(); return; }
   if(action==="relOrigem"){ UI.relatorios.origem=t.value; rerender(); return; }
-  if(action==="relPlano"){ UI.relatorios.plano=t.value; rerender(); return; }
   if(action==="relStatus"){ UI.relatorios.status=t.value; rerender(); return; }
   if(action==="relInicio"){ UI.relatorios.inicio=t.value; rerender(); return; }
   if(action==="relFim"){ UI.relatorios.fim=t.value; rerender(); return; }
@@ -1869,8 +1940,6 @@ document.addEventListener("input",function(e){
   }
   if(kind==="indfield"){ UI.modal.draft[t.getAttribute("data-field")]=t.value; return; }
 
-  if(action==="docTipo"){ const ns=t.getAttribute("data-ns"); UI.docDrafts[ns]=UI.docDrafts[ns]||{}; UI.docDrafts[ns].tipo=t.value; return; }
-  if(action==="docNome"){ const ns=t.getAttribute("data-ns"); UI.docDrafts[ns]=UI.docDrafts[ns]||{}; UI.docDrafts[ns].nome=t.value; return; }
 });
 
 document.addEventListener("change",function(e){
@@ -1881,7 +1950,17 @@ document.addEventListener("change",function(e){
     if(file) importBackupFromFile(file);
     return;
   }
-  if(["carteiraOrigem","vendasStatus","vendasOrigem","vendasPlano","relOrigem","relPlano","relStatus","setCargo"].includes(action)){ /* handled in input already for selects triggers change too - noop */ }
+  if(action==="docFileInput"){
+    const ns=t.getAttribute("data-ns"), tipo=t.getAttribute("data-tipo");
+    handleDocFiles(ns,tipo,t.files).then(()=>{ t.value=""; rerender(); });
+    return;
+  }
+  if(action==="docReplaceInput"){
+    const ns=t.getAttribute("data-ns"), id=t.getAttribute("data-id");
+    handleDocReplace(ns,id,t.files).then(()=>{ t.value=""; rerender(); });
+    return;
+  }
+  if(["carteiraOrigem","vendasStatus","vendasOrigem","relOrigem","relStatus","setCargo"].includes(action)){ /* handled in input already for selects triggers change too - noop */ }
 });
 
 document.addEventListener("click",function(e){
@@ -1914,6 +1993,28 @@ function handleTableDelete(table,id){
   else if(table==="consultores"){ collRemove("equipe",id); }
   else if(table==="producao"){ collRemove("producaoEquipe",id); }
 }
+
+/* ---------------- DRAG & DROP DE DOCUMENTOS ---------------- */
+document.addEventListener("dragover",function(e){
+  const dz=e.target.closest && e.target.closest('[data-action="docDropzone"]');
+  if(!dz) return;
+  e.preventDefault();
+  dz.style.borderColor=BLUE; dz.style.background="rgba(59,130,246,.08)";
+});
+document.addEventListener("dragleave",function(e){
+  const dz=e.target.closest && e.target.closest('[data-action="docDropzone"]');
+  if(!dz) return;
+  dz.style.borderColor=""; dz.style.background="";
+});
+document.addEventListener("drop",function(e){
+  const dz=e.target.closest && e.target.closest('[data-action="docDropzone"]');
+  if(!dz) return;
+  e.preventDefault();
+  dz.style.borderColor=""; dz.style.background="";
+  const ns=dz.getAttribute("data-ns"), tipo=dz.getAttribute("data-tipo");
+  const files=e.dataTransfer&&e.dataTransfer.files;
+  if(files&&files.length) handleDocFiles(ns,tipo,files).then(rerender);
+});
 
 /* ---------------- INIT ---------------- */
 loadAll();
