@@ -190,6 +190,7 @@ function pctChange(atual,anterior){ if(!anterior) return null; return ((atual-an
 function trendText(valorAtual,valorAnterior,contexto){ const pct=pctChange(valorAtual,valorAnterior); if(pct===null) return "Ainda não há mês anterior suficiente para comparar."; if(Math.abs(pct)<3) return `${contexto||"O indicador"} apresentou estabilidade em relação ao mês anterior.`; const dir=pct>=0?"Crescimento":"Queda"; return `${dir} de ${Math.abs(pct).toFixed(0)}% em relação ao mês anterior.`; }
 function currentMonth(){ const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }
 function prevMonth(ym){ const [y,m]=ym.split("-").map(Number); const d=new Date(y,m-2,1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }
+function nextMonth(ym){ const [y,m]=ym.split("-").map(Number); const d=new Date(y,m,1); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; }
 function mondayOf(dateStr){ const d=new Date(dateStr+"T00:00:00"); if(isNaN(d.getTime())) return ""; const day=d.getDay(); const diff=day===0?-6:1-day; const monday=new Date(d); monday.setDate(d.getDate()+diff); return monday.toISOString().slice(0,10); }
 function monthsBetween(iso){ if(!iso) return 0; const start=new Date(iso); const now=new Date(); return Math.max(0,(now.getFullYear()-start.getFullYear())*12+(now.getMonth()-start.getMonth())); }
 function daysUntilBirthday(iso){ if(!iso) return 9999; const parts=iso.split("-").map(Number); const m=parts[1], d=parts[2]; const now=new Date(); let next=new Date(now.getFullYear(),m-1,d); if(next<new Date(now.getFullYear(),now.getMonth(),now.getDate())){ next=new Date(now.getFullYear()+1,m-1,d);} return Math.round((next-new Date(now.getFullYear(),now.getMonth(),now.getDate()))/86400000); }
@@ -362,7 +363,108 @@ function computeFinanceiroMes(vendas,producaoEquipe,indicacoes,config,mes,consul
     producaoPessoal,producaoEquipeTotal,producaoTotal,elegiveisEquipe,requisitoEquipeOk,faixa,planoDeCarreiraPrevisto,indicacoesPagas,totalPrevisto};
 }
 
-/* ---------------- SCHEMAS ---------------- */
+/* ---------------- SAÚDE DA CARTEIRA ---------------- */
+// Nota composta (0-100) considerando: placas ativas, cancelamentos, inadimplência, crescimento,
+// tempo médio de carteira, taxa de retenção e peso da receita recorrente. Tudo a partir de uma única fonte (vendas).
+function computeSaudeCarteira(vendas,financeiroMes){
+  const total=vendas.length||0;
+  if(total===0) return {nota:0,classificacao:"Sem dados",detalhes:{}};
+  const ativas=vendas.filter(v=>v.status==="Ativa").length;
+  const canceladas=vendas.filter(v=>v.status==="Cancelada"||v.status==="Inativa").length;
+  const inadimplentes=vendas.filter(v=>v.status==="Inadimplente").length;
+  const pctAtivas=ativas/total, pctCancelados=canceladas/total, pctInadimplencia=inadimplentes/total;
+
+  const hoje=new Date().toISOString().slice(0,10);
+  const mesAtual=hoje.slice(0,7);
+  const vendas3mAtras=[mesAtual,prevMonth(mesAtual),prevMonth(prevMonth(mesAtual))];
+  const vendas3mAnteriores=[prevMonth(vendas3mAtras[2]),prevMonth(prevMonth(vendas3mAtras[2])),prevMonth(prevMonth(prevMonth(vendas3mAtras[2])))];
+  const qtdRecentes=vendas.filter(v=>vendas3mAtras.includes((v.data||"").slice(0,7))).length;
+  const qtdAnteriores=vendas.filter(v=>vendas3mAnteriores.includes((v.data||"").slice(0,7))).length;
+  const crescimentoPct=qtdAnteriores?((qtdRecentes-qtdAnteriores)/qtdAnteriores)*100:(qtdRecentes>0?100:0);
+
+  const tempoMedioMeses=ativas?vendas.filter(v=>v.status==="Ativa").reduce((s,v)=>s+monthsBetween(v.data),0)/ativas:0;
+  const taxaRetencao=1-pctCancelados;
+  const recorrenciaPeso=financeiroMes&&financeiroMes.totalPrevisto?Math.min(1,(financeiroMes.recorrenciaPrevista/financeiroMes.totalPrevisto)*4):0; // recorrência costuma ser uma fatia pequena; normaliza generosamente
+
+  const scoreAtivas=pctAtivas*100;
+  const scoreCancelamento=Math.max(0,100-pctCancelados*250);
+  const scoreInadimplencia=Math.max(0,100-pctInadimplencia*250);
+  const scoreCrescimento=Math.max(0,Math.min(100,50+crescimentoPct));
+  const scoreTempoMedio=Math.min(100,tempoMedioMeses*6);
+  const scoreRetencao=taxaRetencao*100;
+  const scoreRecorrencia=recorrenciaPeso*100;
+
+  const nota=Math.round(
+    scoreAtivas*0.20 + scoreCancelamento*0.20 + scoreInadimplencia*0.20 +
+    scoreCrescimento*0.10 + scoreTempoMedio*0.10 + scoreRetencao*0.15 + scoreRecorrencia*0.05
+  );
+  let classificacao;
+  if(nota>=90) classificacao="Excelente";
+  else if(nota>=75) classificacao="Boa";
+  else if(nota>=55) classificacao="Regular";
+  else classificacao="Crítica";
+  return {nota:Math.max(0,Math.min(100,nota)),classificacao,detalhes:{pctAtivas,pctCancelados,pctInadimplencia,crescimentoPct,tempoMedioMeses,taxaRetencao}};
+}
+
+/* ---------------- PAINEL DE RETENÇÃO ---------------- */
+function computeRetencao(vendas,mes){
+  const mesAnterior=prevMonth(mes);
+  const fimMesAnterior=`${mesAnterior}-31`;
+  const carteiraInicial=vendas.filter(v=>v.status==="Ativa"&&(v.data||"")<=fimMesAnterior).length;
+  const novasVendas=vendasDoMes(vendas,mes).length;
+  const cancelamentos=vendas.filter(v=>(v.status==="Cancelada"||v.status==="Inativa")&&(v.dataUltimoBoletoPago||"").startsWith(mes)).length;
+  const carteiraAtual=vendas.filter(v=>v.status==="Ativa").length;
+  const base=carteiraInicial+novasVendas;
+  const taxaRetencao=base?Math.max(0,(1-cancelamentos/base)*100):100;
+  const crescimentoLiquido=carteiraAtual-carteiraInicial;
+  return {carteiraInicial,novasVendas,cancelamentos,carteiraAtual,taxaRetencao,crescimentoLiquido};
+}
+
+/* ---------------- RECEITAS FUTURAS ---------------- */
+function computeReceitasFuturas(vendas,producaoEquipe,indicacoes,config,consultores,dias){
+  const hoje=new Date().toISOString().slice(0,10);
+  const fim=addDays(hoje,dias);
+  const mesAtual=hoje.slice(0,7), mesSeguinte=nextMonth(mesAtual);
+  const finAtual=computeFinanceiroMes(vendas,producaoEquipe,indicacoes,config,mesAtual,consultores);
+  const finSeguinte=computeFinanceiroMes(vendas,producaoEquipe,indicacoes,config,mesSeguinte,consultores);
+  function dentroDaJanela(diaDoMes,mesRef){ const d=dataDoMes(mesRef,diaDoMes); return d>=hoje&&d<=fim; }
+  let consultoria=0,recorrencia=0,planoCarreira=0;
+  [{fin:finAtual,mes:mesAtual},{fin:finSeguinte,mes:mesSeguinte}].forEach(({fin,mes})=>{
+    if(dentroDaJanela(CALENDARIO.consultoria.pagamento,mes)) consultoria+=fin.consultoriaPrevista;
+    if(dentroDaJanela(CALENDARIO.recorrencia.pagamento,mes)) recorrencia+=fin.recorrenciaPrevista;
+    if(dentroDaJanela(CALENDARIO.planoDeCarreira.pagamento,mes)) planoCarreira+=fin.planoDeCarreiraPrevisto;
+  });
+  const adesoesPrevistas=vendas.filter(v=>!adesaoEstaPaga(v)&&v.adesaoDataPrevista>=hoje&&v.adesaoDataPrevista<=fim).reduce((s,v)=>s+toNumber(v.valorAdesao),0);
+  const total=consultoria+recorrencia+planoCarreira+adesoesPrevistas;
+  return {consultoria,recorrencia,planoCarreira,adesoesPrevistas,total};
+}
+
+/* ---------------- CONTROLE DOCUMENTAL ---------------- */
+function computeControleDocumental(associados,vendas){
+  const totalAssoc=associados.length||1;
+  const comCNH=associados.filter(a=>(a.documentos||[]).some(d=>d.tipo==="CNH")).length;
+  const totalVendas=vendas.length||1;
+  const comCRLV=vendas.filter(v=>(v.documentosVeiculo||[]).some(d=>d.tipo==="CRLV")).length;
+  const comTermo=vendas.filter(v=>(v.documentosVeiculo||[]).some(d=>d.tipo==="Termo de Adesão")).length;
+  const comLaudo=vendas.filter(v=>(v.documentosVeiculo||[]).some(d=>d.tipo==="Laudo de Vistoria")).length;
+
+  const pendentesAssociado=associados.filter(a=>!(a.documentos||[]).some(d=>d.tipo==="CNH")).map(a=>({nome:a.nomeCompleto,falta:"CNH"}));
+  const pendentesVenda=[];
+  vendas.forEach(v=>{
+    const docs=v.documentosVeiculo||[];
+    ["CRLV","Termo de Adesão","Laudo de Vistoria"].forEach(tipo=>{
+      if(!docs.some(d=>d.tipo===tipo)) pendentesVenda.push({placa:v.veiculoPlaca||"—",falta:tipo,associadoId:v.associadoId});
+    });
+  });
+  const veiculosComPendencia=new Set(pendentesVenda.map(p=>p.placa)).size;
+  return {
+    pctCNH:Math.round((comCNH/totalAssoc)*100), pctCRLV:Math.round((comCRLV/totalVendas)*100),
+    pctTermo:Math.round((comTermo/totalVendas)*100), pctLaudo:Math.round((comLaudo/totalVendas)*100),
+    veiculosComPendencia, pendentesAssociado, pendentesVenda,
+  };
+}
+
+
 const ASSOCIADO_SCHEMA=[
   {key:"nomeCompleto",label:"Nome completo",span:2},
   {key:"cpf",label:"CPF",placeholder:"000.000.000-00"},
@@ -416,7 +518,8 @@ const PRODUCAO_SCHEMA=[
 ];
 
 const NAV=[
-  {key:"dashboard",label:"Dashboard",icon:"dashboard"},
+  {key:"central",label:"Central Operacional",icon:"zap"},
+  {key:"dashboard",label:"Dashboard (BI)",icon:"dashboard"},
   {key:"carteira",label:"Carteira de associados",icon:"users"},
   {key:"financeiro",label:"Financeiro",icon:"wallet"},
   {key:"vendas",label:"Vendas",icon:"cart"},
@@ -467,6 +570,7 @@ const ICONS={
   file:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
   image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
   upload:'<path d="M12 3v13"/><path d="M6 8l6-6 6 6"/><path d="M4 21h16"/>',
+  zap:'<path d="M13 2 3 14h8l-1 8 10-12h-8z"/>',
 };
 function ic(name,size,color){
   const s=size||15, c=color||"currentColor";
@@ -528,7 +632,7 @@ function collRemove(collName,id){
 
 /* ---------------- UI STATE (efêmero) ---------------- */
 const UI={
-  tab:"dashboard", sidebarOpen:true, globalQuery:"", selectedAssociadoId:null,
+  tab:"central", sidebarOpen:true, globalQuery:"", selectedAssociadoId:null,
   modal:null, // {kind, mode, draft, ...}
   dashboardMes: currentMonth(),
   financeiroMes: currentMonth(),
@@ -853,6 +957,162 @@ function renderIndicacaoModal(m){
 }
 
 /* ---------------- DASHBOARD ---------------- */
+/* ---------------- CENTRAL OPERACIONAL (TELA INICIAL) ---------------- */
+function renderCentralOperacional(){
+  const hoje=new Date().toISOString().slice(0,10);
+  const mes=hoje.slice(0,7);
+  const hora=new Date().getHours();
+  const saudacao=hora<12?"Bom dia":hora<18?"Boa tarde":"Boa noite";
+  const {vendas,producaoEquipe,indicacoes,config,equipe:consultores,associados,metas}=DB;
+
+  const metrics=computePortfolioMetrics(vendas);
+  const fin=computeFinanceiroMes(vendas,producaoEquipe,indicacoes,config,mes,consultores);
+  const finAnterior=computeFinanceiroMes(vendas,producaoEquipe,indicacoes,config,prevMonth(mes),consultores);
+  const metaMes=metas.find(m=>m.tipo==="mensal"&&m.periodo===mes);
+  const percentualMeta=metaMes&&toNumber(metaMes.metaFinanceira)?Math.min(999,(fin.totalPrevisto/toNumber(metaMes.metaFinanceira))*100):null;
+  const producaoEquipeMesAtual=producaoEquipe.filter(p=>p.competencia===mes).reduce((s,p)=>s+toNumber(p.placasVendidas),0);
+
+  const planoAtual=computePlanoCarreiraDoMes(vendas,producaoEquipe,consultores,mes);
+  const idxNivel=PLANO_FAIXAS.findIndex(f=>f.nivel===planoAtual.faixa.nivel);
+  const proximoNivel=PLANO_FAIXAS[idxNivel+1];
+  const faltamProximoNivel=proximoNivel?Math.max(0,proximoNivel.min-planoAtual.producaoTotal):0;
+
+  const saude=computeSaudeCarteira(vendas,fin);
+  const retencao=computeRetencao(vendas,mes);
+  const futuras7=computeReceitasFuturas(vendas,producaoEquipe,indicacoes,config,consultores,7);
+  const futuras30=computeReceitasFuturas(vendas,producaoEquipe,indicacoes,config,consultores,30);
+  const docs=computeControleDocumental(associados,vendas);
+
+  // --- Centro de Atividades ---
+  const amanha=addDays(hoje,1);
+  const aniversariantesHoje=associados.filter(a=>a.dataNascimento&&daysUntilBirthday(a.dataNascimento)===0);
+  const aniversariantes7=associados.filter(a=>a.dataNascimento&&daysUntilBirthday(a.dataNascimento)>0&&daysUntilBirthday(a.dataNascimento)<=7);
+  const lembretes=vendas.flatMap(v=>[
+    {data:addDays(v.data,5),texto:`1º contato pós-venda — ${associadoNome(v.associadoId)} (placa ${v.veiculoPlaca||"—"})`},
+    {data:getPrimeiroBoleto(v),texto:`2º contato — confirmar 1º boleto de ${associadoNome(v.associadoId)} (placa ${v.veiculoPlaca||"—"})`},
+  ]).filter(l=>l.data);
+  const posVendasAgendados=lembretes.filter(l=>l.data>=hoje&&l.data<=addDays(hoje,3));
+  const boletosVencendo7=vendas.filter(v=>getPrimeiroBoleto(v)>=hoje&&getPrimeiroBoleto(v)<=addDays(hoje,7));
+  const primeiroBoletoAmanha=vendas.filter(v=>getPrimeiroBoleto(v)===amanha);
+  const nfConsultoria=dataDoMes(mes,CALENDARIO.consultoria.nf)>=hoje&&dataDoMes(mes,CALENDARIO.consultoria.nf)<=addDays(hoje,3);
+  const nfRecorrencia=dataDoMes(mes,CALENDARIO.recorrencia.nf)>=hoje&&dataDoMes(mes,CALENDARIO.recorrencia.nf)<=addDays(hoje,3);
+  const vendasSemTermo=docs.pendentesVenda.filter(p=>p.falta==="Termo de Adesão");
+
+  function itemChecklist(icon,label,count,tone,tab){
+    if(!count) return "";
+    const cor=tone==='red'?RED:tone==='amber'?AMBER:tone==='green'?GREEN:BLUE;
+    return `<div class="alert-card" data-action="setTab" data-tab="${tab}" style="cursor:pointer;">
+      <span class="alert-dot" style="background:${cor}"></span>
+      <div style="font-size:13px;font-weight:500;color:#fff;flex:1;">${esc(label)}</div>
+      <span class="badge tone-${tone}">${count}</span>
+    </div>`;
+  }
+  const checklist=[
+    itemChecklist("clock",`Pós-vendas agendados nos próximos 3 dias`,posVendasAgendados.length,"blue","carteira"),
+    itemChecklist("gift",`Aniversariante(s) hoje: ${aniversariantesHoje.map(a=>a.nomeCompleto).join(", ")}`,aniversariantesHoje.length,"green","aniversariantes"),
+    itemChecklist("gift",`Aniversariante(s) nos próximos 7 dias`,aniversariantes7.length,"gray","aniversariantes"),
+    itemChecklist("wallet",`Boleto(s) vencendo nos próximos 7 dias`,boletosVencendo7.length,"amber","recorrencia"),
+    itemChecklist("alert",`1º boleto vencendo amanhã`,primeiroBoletoAmanha.length,"red","vendas"),
+    itemChecklist("clipboard",`Nota fiscal da Consultoria a emitir até ${formatDateBR(dataDoMes(mes,CALENDARIO.consultoria.nf))}`,nfConsultoria?1:0,"amber","financeiro"),
+    itemChecklist("clipboard",`Nota fiscal da Recorrência a emitir até ${formatDateBR(dataDoMes(mes,CALENDARIO.recorrencia.nf))}`,nfRecorrencia?1:0,"amber","financeiro"),
+    itemChecklist("file",`Associado(s)/veículo(s) com documentos pendentes`,docs.pendentesAssociado.length+docs.veiculosComPendencia,"gray","carteira"),
+    itemChecklist("file",`Venda(s) sem Termo de Adesão anexado`,vendasSemTermo.length,"amber","vendas"),
+  ].filter(Boolean);
+
+  const saudeCor=saude.nota>=75?GREEN:saude.nota>=55?AMBER:RED;
+  const deltaReceita=finAnterior.totalPrevisto?((fin.totalPrevisto-finAnterior.totalPrevisto)/finAnterior.totalPrevisto)*100:null;
+  const deltaConsultoria=finAnterior.consultoriaPrevista?((fin.consultoriaPrevista-finAnterior.consultoriaPrevista)/finAnterior.consultoriaPrevista)*100:null;
+  function deltaText(delta){ return delta===null||!isFinite(delta)?null:`${delta>=0?'+':''}${delta.toFixed(0)}% vs mês anterior`; }
+  const deltaReceitaTxt=deltaText(deltaReceita), deltaConsultoriaTxt=deltaText(deltaConsultoria);
+
+  return `<div style="display:flex;flex-direction:column;gap:20px;">
+    <div>
+      <h1 class="page-title">${saudacao}.</h1>
+      <div style="font-size:14px;color:${MUTED};margin-top:8px;line-height:1.7;max-width:640px;">
+        Hoje sua operação possui <b style="color:#fff;">${metrics.totalPlacasVendidas} vendas</b> e <b style="color:#fff;">${metrics.placasAtivas} placas ativas</b>.
+        Receita prevista de <b style="color:#fff;">${formatBRL(fin.totalPrevisto)}</b> e consultoria prevista de <b style="color:#fff;">${formatBRL(fin.consultoriaPrevista)}</b>.
+        ${percentualMeta!==null?`Você já concluiu <b style="color:${GREEN}">${percentualMeta.toFixed(0)}%</b> da meta mensal. `:""}
+        ${proximoNivel?`Faltam apenas <b style="color:#fff;">${faltamProximoNivel} placas</b> para atingir o nível ${esc(proximoNivel.nivel)}.`:""}
+      </div>
+    </div>
+
+    <div style="display:flex;gap:20px;flex-wrap:wrap;">
+      ${kpiCard("cart","Vendas",metrics.totalPlacasVendidas,{sub:`${metrics.placasAtivas} ativas`,subTone:"up"})}
+      <div class="kpi ancore-card" style="border-top:3px solid ${saudeCor};">
+        <div class="lbl"><span>Saúde da Carteira</span><span class="ic-corner">${ic('trendUp',18,saudeCor)}</span></div>
+        <span class="val" style="color:${saudeCor}">${saude.nota}%</span>
+        <span class="sub" style="color:${saudeCor}">${esc(saude.classificacao)}</span>
+      </div>
+      ${kpiCard("dollar","Receita prevista",formatBRL(fin.totalPrevisto),deltaReceitaTxt?{sub:deltaReceitaTxt,subTone:deltaReceita>=0?"up":"down"}:{})}
+      ${kpiCard("usercog","Consultoria prevista",formatBRL(fin.consultoriaPrevista),deltaConsultoriaTxt?{sub:deltaConsultoriaTxt,subTone:deltaConsultoria>=0?"up":"down"}:{})}
+    </div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;margin-top:-8px;">
+      ${percentualMeta!==null?kpiCard("target","Meta concluída",`${percentualMeta.toFixed(0)}%`,{accent:percentualMeta>=100?GREEN:BLUE}):""}
+      ${kpiCard("usercog","Produção da equipe",`${producaoEquipeMesAtual} placas`)}
+      ${proximoNivel?kpiCard("target",`Faltam p/ ${proximoNivel.nivel}`,`${faltamProximoNivel} placas`,{accent:AMBER}):""}
+    </div>
+
+    <div class="grid-charts-2-1">
+      ${sectionCard("Centro de atividades",checklist.length===0?`<div style="color:${MUTED};font-size:13px;padding:10px 0;">Nenhuma pendência no momento — tudo em dia!</div>`:`<div style="display:flex;flex-direction:column;gap:10px;">${checklist.join("")}</div>`)}
+      <div style="display:flex;flex-direction:column;gap:20px;">
+        ${sectionCard("Painel de retenção",`
+          <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;">
+            <div style="display:flex;justify-content:space-between;"><span style="color:${MUTED}">Carteira inicial</span><b>${retencao.carteiraInicial}</b></div>
+            <div style="display:flex;justify-content:space-between;"><span style="color:${MUTED}">+ Novas vendas</span><b style="color:${GREEN}">+${retencao.novasVendas}</b></div>
+            <div style="display:flex;justify-content:space-between;"><span style="color:${MUTED}">− Cancelamentos</span><b style="color:${RED_DARK}">-${retencao.cancelamentos}</b></div>
+            <div style="border-top:1px solid ${SILVER};padding-top:8px;display:flex;justify-content:space-between;"><span>Carteira atual</span><b>${retencao.carteiraAtual}</b></div>
+            <div style="display:flex;justify-content:space-between;margin-top:6px;"><span style="color:${MUTED}">Taxa de retenção</span><b style="color:${GREEN}">${retencao.taxaRetencao.toFixed(0)}%</b></div>
+            <div style="display:flex;justify-content:space-between;"><span style="color:${MUTED}">Crescimento líquido</span><b style="color:${retencao.crescimentoLiquido>=0?GREEN:RED_DARK}">${retencao.crescimentoLiquido>=0?'+':''}${retencao.crescimentoLiquido}</b></div>
+          </div>
+        `)}
+      </div>
+    </div>
+
+    <div class="grid-2col">
+      ${sectionCard("Receitas futuras",`
+        <div class="grid-2col">
+          <div><div style="font-size:11px;color:${MUTED};text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Próximos 7 dias</div>
+            <div style="font-size:24px;font-weight:700;color:#fff;margin-bottom:8px;">${formatBRL(futuras7.total)}</div>
+            <div style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:${MUTED}">
+              <div style="display:flex;justify-content:space-between;"><span>Consultoria</span><span>${formatBRL(futuras7.consultoria)}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Recorrência</span><span>${formatBRL(futuras7.recorrencia)}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Plano de carreira</span><span>${formatBRL(futuras7.planoCarreira)}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Adesões previstas</span><span>${formatBRL(futuras7.adesoesPrevistas)}</span></div>
+            </div>
+          </div>
+          <div><div style="font-size:11px;color:${MUTED};text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px;">Próximos 30 dias</div>
+            <div style="font-size:24px;font-weight:700;color:#fff;margin-bottom:8px;">${formatBRL(futuras30.total)}</div>
+            <div style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:${MUTED}">
+              <div style="display:flex;justify-content:space-between;"><span>Consultoria</span><span>${formatBRL(futuras30.consultoria)}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Recorrência</span><span>${formatBRL(futuras30.recorrencia)}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Plano de carreira</span><span>${formatBRL(futuras30.planoCarreira)}</span></div>
+              <div style="display:flex;justify-content:space-between;"><span>Adesões previstas</span><span>${formatBRL(futuras30.adesoesPrevistas)}</span></div>
+            </div>
+          </div>
+        </div>
+      `)}
+      ${sectionCard("Controle documental",`
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px;">
+          ${[["CNH",docs.pctCNH],["CRLV",docs.pctCRLV],["Termo de Adesão",docs.pctTermo],["Laudo de Vistoria",docs.pctLaudo]].map(([label,pct])=>`
+            <div>
+              <div style="display:flex;justify-content:space-between;font-size:12.5px;color:${MUTED};margin-bottom:6px;"><span>${esc(label)}</span><span>${pct}%</span></div>
+              <div class="bar-track"><div class="bar-fill ${pct>=80?'green':pct>=50?'blue':'amber'}" style="width:${pct}%;"></div></div>
+            </div>`).join("")}
+        </div>
+        <div style="font-size:12.5px;color:${MUTED};margin-bottom:8px;">${docs.veiculosComPendencia} veículo(s) com documentação pendente.</div>
+        ${(docs.pendentesAssociado.length+docs.pendentesVenda.length)===0?`<div style="color:${MUTED};font-size:12.5px;">Toda a documentação está em dia.</div>`:`
+        <div style="display:flex;flex-direction:column;gap:6px;max-height:180px;overflow-y:auto;">
+          ${docs.pendentesAssociado.slice(0,6).map(p=>`<div style="font-size:12.5px;background:${SURFACE_ALT};border-radius:8px;padding:8px 10px;"><b>${esc(p.nome)}</b> — falta ${esc(p.falta)}</div>`).join("")}
+          ${docs.pendentesVenda.slice(0,6).map(p=>`<div style="font-size:12.5px;background:${SURFACE_ALT};border-radius:8px;padding:8px 10px;">Placa <b>${esc(p.placa)}</b> — falta ${esc(p.falta)}</div>`).join("")}
+        </div>
+        ${(docs.pendentesAssociado.length+docs.pendentesVenda.length)>12?`<div style="font-size:11.5px;color:${MUTED};margin-top:8px;">+ ${(docs.pendentesAssociado.length+docs.pendentesVenda.length)-12} pendência(s) adicionais.</div>`:""}
+        `}
+      `)}
+    </div>
+  </div>`;
+}
+
+
 function renderDashboard(){
   const mes=UI.dashboardMes;
   const vendas=DB.vendas, producaoEquipe=DB.producaoEquipe, indicacoes=DB.indicacoes, config=DB.config, consultores=DB.equipe, associados=DB.associados, metas=DB.metas;
@@ -968,7 +1228,7 @@ function renderDashboard(){
       ${kpiCard("dollar","Total previsto",formatBRL(finPeriodo.totalPrevisto),{accent:GREEN})}
     </div>
 
-    <div class="grid-metas-row" style="align-items:start;">
+    <div class="grid-2col" style="align-items:start;">
       ${metaMes?`<div class="card ancore-card">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px;">
           <h3 style="margin:0;font-size:16px;font-weight:600;text-transform:capitalize;color:#fff;">Meta de ${new Date(mes+"-01T00:00:00").toLocaleDateString("pt-BR",{month:"long"})}</h3>
@@ -1015,11 +1275,6 @@ function renderDashboard(){
           <div style="font-size:13px;margin-top:10px;color:${MUTED};">Faltam <b style="color:#fff;">${faltamProximoNivel}</b> placas para o próximo nível.</div>`
           :`<div style="font-size:13px;color:${MUTED}">Nível máximo do Plano de Carreira já atingido.</div>`}
       </div>
-
-      ${sectionCard("Alertas inteligentes",`<div style="display:flex;flex-direction:column;gap:10px;">${alertas.slice(0,6).map(a=>{
-        const dotColor=a.tone==='red'?RED:a.tone==='amber'?AMBER:a.tone==='green'?GREEN:BLUE;
-        return `<div class="alert-card"><span class="alert-dot" style="background:${dotColor}"></span><div style="font-size:13px;font-weight:500;color:#fff;">${esc(a.texto)}</div></div>`;
-      }).join("")}</div>`)}
     </div>
 
     <div style="display:flex;flex-direction:column;gap:20px;">
@@ -1034,22 +1289,6 @@ function renderDashboard(){
         ${sectionCard("Produção pessoal x equipe",chartCanvas("chartProducao"),null,insightProducao)}
         ${sectionCard("Vendas por origem",chartCanvas("chartOrigem"),null,insightOrigem)}
       </div>
-    </div>
-
-    <div class="grid-daily-3">
-      ${sectionCard("Tarefas de pós-venda", tarefasHoje.length===0?`<div style="color:${MUTED};font-size:13px;padding:10px 0;">Nenhuma tarefa de pós-venda para hoje.</div>`:
-        `<div style="display:flex;flex-direction:column;gap:8px;">${tarefasHoje.map(l=>`
-          <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:${SURFACE_ALT};border-radius:10px;font-size:13px;">${ic('clock',14,BLUE)}<span>${esc(l.texto)}</span></div>`).join("")}</div>`)}
-      ${sectionCard("Próximos boletos", boletosProximos.length===0?`<div style="color:${MUTED};font-size:13px;padding:10px 0;">Nenhum primeiro boleto vencendo nos próximos 7 dias.</div>`:
-        `<div style="display:flex;flex-direction:column;gap:8px;">${boletosProximos.slice(0,8).map(v=>`
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:${SURFACE_ALT};border-radius:10px;font-size:13px;">
-            <span>${esc(associadoNome(v.associadoId))} · ${esc(v.veiculoPlaca||"—")}</span><span style="color:${MUTED};">${formatDateBR(getPrimeiroBoleto(v))}</span>
-          </div>`).join("")}</div>`)}
-      ${sectionCard("Aniversariantes (7 dias)", aniversariantesProx7Dias.length===0?`<div style="color:${MUTED};font-size:13px;padding:10px 0;">Nenhum aniversariante nos próximos 7 dias.</div>`:
-        `<div style="display:flex;flex-direction:column;gap:8px;">${aniversariantesProx7Dias.slice(0,8).map(a=>`
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:${SURFACE_ALT};border-radius:10px;font-size:13px;">
-            <span>${a._dias===0?"🎉":"📅"} ${esc(a.nomeCompleto)}</span><span style="color:${a._dias===0?GREEN:MUTED};font-weight:${a._dias===0?'700':'400'};">${a._dias===0?"Hoje":`em ${a._dias}d`}</span>
-          </div>`).join("")}</div>`)}
     </div>
   </div>`;
 
@@ -1690,6 +1929,8 @@ function render(){
   try{
     if(LOADING){
       content=`<div style="color:${MUTED};font-size:14px;padding:40px;text-align:center;">Carregando dados…</div>`;
+    }else if(UI.tab==="central"){
+      content=renderCentralOperacional();
     }else if(UI.tab==="dashboard"){
       content=renderDashboard();
     }else if(UI.tab==="carteira"){
