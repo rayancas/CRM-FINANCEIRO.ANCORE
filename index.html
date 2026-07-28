@@ -128,6 +128,13 @@ var t,e;t=this,e=function(){"use strict";var t=Object.freeze({__proto__:null,get
   .table-scroll{overflow-x:auto;}
   .pager{display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-top:1px solid var(--border-soft);font-size:12.5px;color:var(--muted);}
   svg.ic{flex-shrink:0;}
+  .nav-item{display:flex;align-items:center;gap:10px;background:transparent;color:#D7DCE5;border:none;border-left:3px solid transparent;border-radius:8px;cursor:pointer;white-space:nowrap;overflow:hidden;width:100%;transition:background .2s ease,color .2s ease,border-color .2s ease;}
+  .nav-item .ic{color:#BFC8D6;transition:color .2s ease;}
+  .nav-item:hover{background:rgba(255,255,255,.06);color:#F4F7FB;}
+  .nav-item:hover .ic{color:#F4F7FB;}
+  .nav-item.active{background:rgba(16,185,129,.14);color:#fff;border-left-color:#10B981;box-shadow:inset 0 0 24px rgba(16,185,129,.10);}
+  .nav-item.active .ic{color:#10B981;}
+  .sidebar-divider{height:1px;background:rgba(255,255,255,.08);margin:14px 16px 10px;}
 </style>
 </head>
 <body>
@@ -1982,13 +1989,15 @@ ${esc((err&&err.stack)||"")}</pre>
   <div style="font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--page-bg);min-height:100vh;color:var(--text);display:flex;">
     <div style="width:${UI.sidebarOpen?232:64}px;transition:width .15s ease;background:${BLACK};min-height:100vh;display:flex;flex-direction:column;border-right:1px solid ${SILVER};flex-shrink:0;">
       <div style="display:flex;align-items:center;justify-content:${UI.sidebarOpen?'space-between':'center'};flex-direction:${UI.sidebarOpen?'row':'column'};gap:${UI.sidebarOpen?'0':'10px'};padding:18px 16px;">
-        ${UI.sidebarOpen?`<div style="display:flex;align-items:center;gap:10px;">${aurumMonogramSVG(28,'gradSidebar')}<div><div style="color:#fff;font-size:17px;font-weight:700;letter-spacing:.04em;">AURUM</div><div style="color:${MUTED};font-size:10px;font-weight:500;letter-spacing:.02em;">Transformando carteiras em inteligência</div></div></div>`:aurumMonogramSVG(30,'gradSidebarCollapsed')}
+        ${UI.sidebarOpen?`<div style="display:flex;align-items:center;gap:10px;">${aurumMonogramSVG(28,'gradSidebar')}<div><div style="color:#fff;font-size:17px;font-weight:700;letter-spacing:.04em;">AURUM</div></div></div>`:aurumMonogramSVG(30,'gradSidebarCollapsed')}
         <button class="icon-btn" style="color:${SILVER}" data-action="toggleSidebar">${ic(UI.sidebarOpen?'chevronLeft':'chevronRight',18)}</button>
       </div>
+      ${UI.sidebarOpen?`<div style="padding:0 16px 14px;color:#C7CEDA;font-size:10.5px;font-weight:600;letter-spacing:.06em;line-height:1.6;text-transform:uppercase;font-family:'Inter',system-ui,sans-serif;">GESTÃO DE CARTEIRA E CONTROLE DE RECEITAS</div>`:""}
+      <div class="sidebar-divider"></div>
       <nav style="display:flex;flex-direction:column;gap:2px;padding:6px 10px;flex:1;">
         ${NAV.map(n=>{
           const active=UI.tab===n.key;
-          return `<button data-action="setTab" data-tab="${n.key}" title="${esc(n.label)}" style="display:flex;align-items:center;gap:10px;background:${active?GREEN:'transparent'};color:${active?'#fff':SILVER};border:none;border-radius:8px;padding:${UI.sidebarOpen?'10px 12px':'10px'};font-size:13px;font-weight:600;cursor:pointer;justify-content:${UI.sidebarOpen?'flex-start':'center'};white-space:nowrap;overflow:hidden;width:100%;">
+          return `<button data-action="setTab" data-tab="${n.key}" title="${esc(n.label)}" class="nav-item ${active?'active':''}" style="padding:${UI.sidebarOpen?'10px 12px':'10px'};font-size:13px;font-weight:600;justify-content:${UI.sidebarOpen?'flex-start':'center'};">
             ${ic(n.icon,16)}${UI.sidebarOpen?esc(n.label):""}
           </button>`;
         }).join("")}
