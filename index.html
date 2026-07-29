@@ -659,6 +659,7 @@ const UI={
   dashboardMes: currentMonth(),
   financeiroMes: currentMonth(),
   equipeMes: currentMonth(),
+  consultoriasAtivas:{search:"",faixa:"",status:"",inicio:"",fim:""},
   recorrenciaMes: currentMonth(),
   carteira:{search:"",origem:""},
   vendas:{search:"",status:"",showFiltros:false,origem:"",inicio:"",fim:""},
@@ -698,10 +699,13 @@ function kpiCard(iconName,label,value,opts){
   opts=opts||{};
   const accent=opts.accent||GREEN;
   const sub=opts.sub?`<span class="sub" style="color:${opts.subTone==='down'?RED_DARK:opts.subTone==='up'?GREEN:MUTED}">${opts.subTone==='up'?ic('trendUp',12):opts.subTone==='down'?ic('trendDown',12):""}${esc(opts.sub)}</span>`:"";
-  return `<div class="kpi ancore-card">
+  const clickAttrs=opts.clickTab?`data-action="setTab" data-tab="${opts.clickTab}" style="cursor:pointer;"`:"";
+  const hint=opts.clickTab?`<span style="font-size:10.5px;color:${MUTED};display:flex;align-items:center;gap:3px;margin-top:2px;">Ver detalhes ${ic('chevronRight',11)}</span>`:"";
+  return `<div class="kpi ancore-card" ${clickAttrs}>
     <div class="lbl"><span>${esc(label)}</span><span class="ic-corner">${ic(iconName,18,accent)}</span></div>
     <span class="val">${value}</span>
     ${sub}
+    ${hint}
   </div>`;
 }
 function sectionCard(title,innerHTML,right,subtitle){
@@ -1247,7 +1251,7 @@ function renderDashboard(){
     <div style="display:flex;gap:20px;flex-wrap:wrap;">
       ${kpiCard("cart","Adesões do mês",formatBRL(finPeriodo.adesoesMes),{sub:`${finPeriodo.totalAdesoesQtd} vendas`})}
       ${kpiCard("users","Carteira",`${metrics.totalPlacasVendidas} Vendas`,{sub:`${metrics.placasAtivas} Ativas`,subTone:"up"})}
-      ${kpiCard("usercog","Consultoria",formatBRL(finPeriodo.consultoriaPrevista),{sub:`${metrics.consultoriasAtivas} Ativas`,subTone:"up"})}
+      ${kpiCard("usercog","Consultoria",formatBRL(finPeriodo.consultoriaPrevista),{sub:`${finPeriodo.consultoriasAtivasTotal} Ativas`,subTone:"up",clickTab:"consultoriasAtivas"})}
       ${kpiCard("dollar","Total previsto",formatBRL(finPeriodo.totalPrevisto),{accent:GREEN})}
     </div>
 
@@ -1728,6 +1732,81 @@ function renderRecorrencia(){
   </div>`;
 }
 
+/* ---------------- CONSULTORIAS ATIVAS (detalhe do card do Dashboard) ---------------- */
+function computeConsultoriasAtivasList(){
+  const mes=currentMonth();
+  const mesAnterior=prevMonth(mes);
+  // mesmo criterio usado em computeFinanceiroMes para compor a Consultoria Prevista
+  return DB.vendas.filter(v=>v.status==="Ativa"&&toNumber(v.consultoria)>0&&jaFaturandoEm(v,mesAnterior));
+}
+function renderConsultoriasAtivas(){
+  const st=UI.consultoriasAtivas;
+  const lista=computeConsultoriasAtivasList();
+
+  const filtrada=lista
+    .filter(v=>!st.faixa||String(toNumber(v.consultoria))===st.faixa)
+    .filter(v=>!st.status||v.status===st.status)
+    .filter(v=>!st.inicio||(v.data||"")>=st.inicio)
+    .filter(v=>!st.fim||(v.data||"")<=st.fim)
+    .filter(v=>{ if(!st.search) return true; const s=st.search.trim().toLowerCase(); return [associadoNome(v.associadoId),v.veiculoPlaca].some(x=>(x||"").toLowerCase().includes(s)); });
+
+  const total=lista.length;
+  const valorTotal=lista.reduce((s,v)=>s+toNumber(v.consultoria),0);
+  const valorMedio=total?valorTotal/total:0;
+  const distribuicao=CONSULTORIA_VALORES.map(v=>({valor:v,qtd:lista.filter(x=>toNumber(x.consultoria)===v).length}));
+
+  const columns=[
+    {key:"associado",label:"Associado",render:r=>`<button class="btn-ghost" style="background:none;border:none;padding:0;color:${RED_DARK};font-weight:700;text-decoration:underline;font-size:13px;" data-action="abrirAssociadoDaVenda" data-id="${r.associadoId}">${esc(associadoNome(r.associadoId))}</button>`},
+    {key:"veiculoPlaca",label:"Placa",render:r=>esc(r.veiculoPlaca||"—")},
+    {key:"data",label:"Data da venda",render:r=>formatDateBR(r.data)},
+    {key:"consultoria",label:"Valor da consultoria",render:r=>formatBRL(toNumber(r.consultoria))},
+    {key:"primeiroBoleto",label:"1º boleto",render:r=>formatDateBR(getPrimeiroBoleto(r))},
+    {key:"ultimoBoletoPago",label:"Último boleto pago",render:r=>r.dataUltimoBoletoPago?formatDateBR(r.dataUltimoBoletoPago):"—"},
+    {key:"status",label:"Status",render:r=>badge(r.status,statusTone(r.status))},
+    {key:"tempo",label:"Tempo de consultoria",render:r=>`${monthsBetween(getPrimeiroBoleto(r))} meses`},
+  ];
+
+  return `<div style="display:flex;flex-direction:column;gap:20px;">
+    <button class="btn-ghost" data-action="setTab" data-tab="dashboard">${ic('arrowLeft',15)} Voltar ao Dashboard</button>
+
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+      ${kpiCard("usercog","Total de consultorias ativas",total)}
+      ${kpiCard("dollar","Valor total previsto",formatBRL(valorTotal))}
+      ${kpiCard("trendUp","Valor médio por consultoria",formatBRL(valorMedio))}
+    </div>
+
+    ${sectionCard("Distribuição por faixa",`<div class="grid-3col">${distribuicao.map(d=>`
+      <div style="background:${SURFACE_ALT};border-radius:10px;padding:12px 14px;text-align:center;">
+        <div style="font-size:18px;font-weight:700;color:#fff;">${d.qtd}</div>
+        <div style="font-size:11.5px;color:${MUTED};">${formatBRL(d.valor)}</div>
+      </div>`).join("")}</div>`)}
+
+    <div class="card" style="padding:16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+        <div style="position:relative;flex:1;min-width:220px;max-width:320px;">
+          <span style="position:absolute;left:12px;top:33px;color:${MUTED}">${ic('search',15)}</span>
+          <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Buscar</span>
+            <input class="input" style="padding-left:34px;" placeholder="Associado ou placa…" value="${esc(st.search)}" data-action="consAtivasSearch" /></label>
+        </div>
+        <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Faixa</span>
+          <select class="input" style="max-width:140px" data-action="consAtivasFaixa">
+            <option value="">Todas</option>
+            ${CONSULTORIA_VALORES.map(v=>`<option value="${v}" ${st.faixa===String(v)?'selected':''}>${formatBRL(v)}</option>`).join("")}
+          </select></label>
+        <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Status</span>
+          <select class="input" style="max-width:160px" data-action="consAtivasStatus">
+            <option value="">Todos</option>
+            ${VENDA_STATUS_OPTS.map(o=>`<option value="${esc(o)}" ${st.status===o?'selected':''}>${esc(o)}</option>`).join("")}
+          </select></label>
+        <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Venda de</span><input class="input" type="date" value="${st.inicio}" data-action="consAtivasInicio" /></label>
+        <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Venda até</span><input class="input" type="date" value="${st.fim}" data-action="consAtivasFim" /></label>
+      </div>
+    </div>
+
+    ${sectionCard(`Consultorias ativas (${filtrada.length})`,dataTable("consultoriasAtivas",columns,filtrada,{sortable:true,emptyText:"Nenhuma consultoria ativa encontrada para os filtros selecionados."}))}
+  </div>`;
+}
+
 /* ---------------- ANIVERSARIANTES ---------------- */
 function renderAniversariantes(){
   const st=UI.aniversariantes;
@@ -2052,6 +2131,8 @@ function render(){
       content=renderMetas();
     }else if(UI.tab==="recorrencia"){
       content=renderRecorrencia();
+    }else if(UI.tab==="consultoriasAtivas"){
+      content=renderConsultoriasAtivas();
     }else if(UI.tab==="aniversariantes"){
       content=renderAniversariantes();
     }else if(UI.tab==="indicacoes"){
@@ -2294,6 +2375,11 @@ document.addEventListener("input",function(e){
   if(action==="setFinanceiroMes"){ UI.financeiroMes=t.value; rerender(); return; }
   if(action==="setEquipeMes"){ UI.equipeMes=t.value; rerender(); return; }
   if(action==="setRecorrenciaMes"){ UI.recorrenciaMes=t.value; rerender(); return; }
+  if(action==="consAtivasSearch"){ UI.consultoriasAtivas.search=t.value; rerender(); return; }
+  if(action==="consAtivasFaixa"){ UI.consultoriasAtivas.faixa=t.value; rerender(); return; }
+  if(action==="consAtivasStatus"){ UI.consultoriasAtivas.status=t.value; rerender(); return; }
+  if(action==="consAtivasInicio"){ UI.consultoriasAtivas.inicio=t.value; rerender(); return; }
+  if(action==="consAtivasFim"){ UI.consultoriasAtivas.fim=t.value; rerender(); return; }
   if(action==="setCargo"){ persistConfig({...DB.config,meuCargo:t.value}).then(rerender); return; }
   if(action==="setParticipaPlanoCarreira"){
     persistConfig({...DB.config,participaPlanoCarreira:t.value}).then(()=>{
