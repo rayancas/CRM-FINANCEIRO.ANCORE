@@ -659,7 +659,9 @@ const UI={
   dashboardMes: currentMonth(),
   financeiroMes: currentMonth(),
   equipeMes: currentMonth(),
-  consultoriasAtivas:{search:"",faixa:"",status:"",inicio:"",fim:""},
+  consultoriasAtivas:{search:"",faixa:"",status:"",inicio:"",fim:"",rapido:"todas"},
+  analiseAdesoes:{mes:currentMonth(),status:"",search:""},
+  receitaPrevista:{mes:currentMonth()},
   recorrenciaMes: currentMonth(),
   carteira:{search:"",origem:""},
   vendas:{search:"",status:"",showFiltros:false,origem:"",inicio:"",fim:""},
@@ -699,7 +701,7 @@ function kpiCard(iconName,label,value,opts){
   opts=opts||{};
   const accent=opts.accent||GREEN;
   const sub=opts.sub?`<span class="sub" style="color:${opts.subTone==='down'?RED_DARK:opts.subTone==='up'?GREEN:MUTED}">${opts.subTone==='up'?ic('trendUp',12):opts.subTone==='down'?ic('trendDown',12):""}${esc(opts.sub)}</span>`:"";
-  const clickAttrs=opts.clickTab?`data-action="setTab" data-tab="${opts.clickTab}" style="cursor:pointer;"`:"";
+  const clickAttrs=opts.clickTab?`data-action="setTab" data-tab="${opts.clickTab}" ${opts.clickExtra||""} style="cursor:pointer;"`:"";
   const hint=opts.clickTab?`<span style="font-size:10.5px;color:${MUTED};display:flex;align-items:center;gap:3px;margin-top:2px;">Ver detalhes ${ic('chevronRight',11)}</span>`:"";
   return `<div class="kpi ancore-card" ${clickAttrs}>
     <div class="lbl"><span>${esc(label)}</span><span class="ic-corner">${ic(iconName,18,accent)}</span></div>
@@ -1249,10 +1251,10 @@ function renderDashboard(){
     </div>
 
     <div style="display:flex;gap:20px;flex-wrap:wrap;">
-      ${kpiCard("cart","Adesões do mês",formatBRL(finPeriodo.adesoesMes),{sub:`${finPeriodo.totalAdesoesQtd} vendas`})}
-      ${kpiCard("users","Carteira",`${metrics.totalPlacasVendidas} Vendas`,{sub:`${metrics.placasAtivas} Ativas`,subTone:"up"})}
-      ${kpiCard("usercog","Consultoria",formatBRL(finPeriodo.consultoriaPrevista),{sub:`${finPeriodo.consultoriasAtivasTotal} Ativas`,subTone:"up",clickTab:"consultoriasAtivas"})}
-      ${kpiCard("dollar","Total previsto",formatBRL(finPeriodo.totalPrevisto),{accent:GREEN})}
+      ${kpiCard("cart","Adesões do mês",formatBRL(finPeriodo.adesoesMes),{sub:`${finPeriodo.totalAdesoesQtd} vendas`,clickTab:"analiseAdesoes"})}
+      ${kpiCard("users","Carteira",`${metrics.totalPlacasVendidas} Vendas`,{sub:`${metrics.placasAtivas} Ativas`,subTone:"up",clickTab:"saudeCarteira"})}
+      ${kpiCard("usercog","Consultoria",formatBRL(finPeriodo.consultoriaPrevista),{sub:`${finPeriodo.consultoriasAtivasTotal} Ativas`,subTone:"up",clickTab:"consultoriasAtivas",clickExtra:'data-filtro-consultoria="ativas"'})}
+      ${kpiCard("dollar","Total previsto",formatBRL(finPeriodo.totalPrevisto),{accent:GREEN,clickTab:"receitaPrevista"})}
     </div>
 
     <div class="grid-2col" style="align-items:start;">
@@ -1340,11 +1342,29 @@ function chartCanvas(id){ return `<div style="width:100%;height:240px;"><canvas 
 
 const CHART_INSTANCES={};
 function destroyChart(id){ if(CHART_INSTANCES[id]){ CHART_INSTANCES[id].destroy(); delete CHART_INSTANCES[id]; } }
+const CHART_TOOLTIP_STYLE={backgroundColor:"#1D222C",titleColor:"#fff",bodyColor:"#D0D3D8",borderColor:"rgba(255,255,255,.08)",borderWidth:1,padding:10,cornerRadius:8,displayColors:false};
+function chartAreaGradient(c,color){ const ctx=c.getContext("2d"); const g=ctx.createLinearGradient(0,0,0,240); g.addColorStop(0,color+"55"); g.addColorStop(1,color+"00"); return g; }
+function chartCommonScales(){ return {x:{ticks:{color:MUTED,font:{size:11}},grid:{display:false}},y:{ticks:{color:MUTED,font:{size:10}},grid:{color:"rgba(255,255,255,.05)"}}}; }
+function safeChart(id,builder){
+  try{
+    const canvas=document.getElementById(id);
+    if(!canvas) return;
+    if(typeof Chart==="undefined"){
+      if(canvas.parentNode) canvas.parentNode.innerHTML=`<div style="color:${MUTED};font-size:12.5px;padding:20px;text-align:center;">Não foi possível carregar a biblioteca de gráficos (Chart.js). Verifique sua conexão ou bloqueador de anúncios e recarregue a página.</div>`;
+      return;
+    }
+    CHART_INSTANCES[id]=builder(canvas);
+  }catch(err){
+    console.error("Erro ao desenhar gráfico",id,err);
+    const canvas=document.getElementById(id);
+    if(canvas && canvas.parentNode){ canvas.parentNode.innerHTML=`<div style="color:${MUTED};font-size:12.5px;padding:20px;text-align:center;">Não foi possível desenhar este gráfico (${esc(err.message||String(err))}).</div>`; }
+  }
+}
 function drawDashboardCharts(){
   if(!DB._dashboardData) return;
   const {series,carteiraPorMes,vendasPorOrigem,composicaoReceita}=DB._dashboardData;
-  const muted=MUTED, silver=SILVER;
-  const commonScales={x:{ticks:{color:muted,font:{size:11}},grid:{display:false}},y:{ticks:{color:muted,font:{size:10}},grid:{color:"rgba(255,255,255,.05)"}}};
+  const muted=MUTED;
+  const commonScales=chartCommonScales();
   const chartIds=["chartReceita","chartVendas","chartConsultoria","chartCarteira","chartProducao","chartOrigem","chartComposicao"];
   chartIds.forEach(destroyChart);
 
@@ -1359,28 +1379,8 @@ function drawDashboardCharts(){
     return;
   }
 
-  function safeChart(id,builder){
-    try{
-      const canvas=document.getElementById(id);
-      if(!canvas) return;
-      CHART_INSTANCES[id]=builder(canvas);
-    }catch(err){
-      console.error("Erro ao desenhar gráfico",id,err);
-      const canvas=document.getElementById(id);
-      if(canvas && canvas.parentNode){
-        canvas.parentNode.innerHTML=`<div style="color:${MUTED};font-size:12.5px;padding:20px;text-align:center;">Não foi possível desenhar este gráfico (${esc(err.message||String(err))}).</div>`;
-      }
-    }
-  }
-
-  function areaGradient(c,color){
-    const ctx=c.getContext("2d");
-    const g=ctx.createLinearGradient(0,0,0,240);
-    g.addColorStop(0,color+"55");
-    g.addColorStop(1,color+"00");
-    return g;
-  }
-  const tooltipStyle={backgroundColor:"#1D222C",titleColor:"#fff",bodyColor:"#D0D3D8",borderColor:"rgba(255,255,255,.08)",borderWidth:1,padding:10,cornerRadius:8,displayColors:false};
+  function areaGradient(c,color){ return chartAreaGradient(c,color); }
+  const tooltipStyle=CHART_TOOLTIP_STYLE;
 
   safeChart("chartReceita",(c)=>new Chart(c,{type:"line",data:{labels:series.map(s=>s.mes),datasets:[
     {label:"Receita Total",data:series.map(s=>s.receita),borderColor:BLUE,backgroundColor:areaGradient(c,BLUE),fill:true,tension:.4,pointRadius:0,pointHoverRadius:5,borderWidth:2.5},
@@ -1414,6 +1414,126 @@ function drawDashboardCharts(){
 }
 
 /* ---------------- CARTEIRA ---------------- */
+/* ---------------- ANÁLISE DE ADESÕES (drill-down do card "Adesões do mês") ---------------- */
+function renderAnaliseAdesoes(){
+  const st=UI.analiseAdesoes;
+  const mes=st.mes;
+  const vendasDoMesArr=vendasDoMes(DB.vendas,mes).filter(v=>toNumber(v.valorAdesao)>0);
+
+  const efetivadas=vendasDoMesArr.filter(v=>adesaoEstaPaga(v));
+  const pendentes=vendasDoMesArr.filter(v=>!adesaoEstaPaga(v));
+  const valorEfetivado=efetivadas.reduce((s,v)=>s+toNumber(v.valorAdesao),0);
+  const valorPendente=pendentes.reduce((s,v)=>s+toNumber(v.valorAdesao),0);
+  const qtd=vendasDoMesArr.length;
+  const ticketMedio=qtd?(valorEfetivado+valorPendente)/qtd:0;
+  const pctEfetivadas=qtd?(efetivadas.length/qtd)*100:0;
+  const pctPendentes=qtd?(pendentes.length/qtd)*100:0;
+
+  const filtradas=vendasDoMesArr
+    .filter(v=>!st.status||(st.status==="Efetivada"?adesaoEstaPaga(v):!adesaoEstaPaga(v)))
+    .filter(v=>{ if(!st.search) return true; const s=st.search.trim().toLowerCase(); return [associadoNome(v.associadoId),v.veiculoPlaca].some(x=>(x||"").toLowerCase().includes(s)); });
+
+  const columns=[
+    {key:"data",label:"Data",render:r=>formatDateBR(r.data)},
+    {key:"associado",label:"Associado",render:r=>`<button class="btn-ghost" style="background:none;border:none;padding:0;color:${RED_DARK};font-weight:700;text-decoration:underline;font-size:13px;" data-action="abrirAssociadoDaVenda" data-id="${r.associadoId}">${esc(associadoNome(r.associadoId))}</button>`},
+    {key:"veiculoPlaca",label:"Placa",render:r=>esc(r.veiculoPlaca||"—")},
+    {key:"valorAdesao",label:"Valor da adesão",render:r=>formatBRL(toNumber(r.valorAdesao))},
+    {key:"statusAdesao",label:"Status da adesão",render:r=>badge(adesaoEstaPaga(r)?"Efetivada":"Pendente",adesaoEstaPaga(r)?"green":"amber")},
+    {key:"dataPrevista",label:"Data prevista",render:r=>r.adesaoDataPrevista?formatDateBR(r.adesaoDataPrevista):"—"},
+    {key:"dataPagamento",label:"Data de pagamento",render:r=>r.adesaoDataEfetiva?formatDateBR(r.adesaoDataEfetiva):(adesaoEstaPaga(r)?formatDateBR(r.data):"—")},
+  ];
+
+  DB._analiseAdesoesData=buildAnaliseAdesoesChartData(mes);
+
+  return `<div style="display:flex;flex-direction:column;gap:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+      <button class="btn-ghost" data-action="setTab" data-tab="dashboard">${ic('arrowLeft',15)} Voltar ao Dashboard</button>
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Competência</span><input class="input" type="month" value="${mes}" data-action="setAnaliseAdesoesMes" /></label>
+    </div>
+
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+      ${kpiCard("dollar","Adesões efetivadas",formatBRL(valorEfetivado),{sub:`${pctEfetivadas.toFixed(0)}%`,subTone:"up"})}
+      ${kpiCard("clock","Adesões pendentes",formatBRL(valorPendente),{sub:`${pctPendentes.toFixed(0)}%`,accent:AMBER})}
+      ${kpiCard("cart","Quantidade de vendas",qtd)}
+      ${kpiCard("trendUp","Ticket médio",formatBRL(ticketMedio))}
+    </div>
+
+    <div class="grid-charts-2-1">
+      ${sectionCard("Evolução das adesões no mês",chartCanvas("chartAdesoesEvolucao"))}
+      ${sectionCard("Efetivadas × Pendentes",chartCanvas("chartAdesoesStatus"))}
+    </div>
+    <div class="grid-2col">
+      ${sectionCard("Ticket médio por período",chartCanvas("chartAdesoesTicket"))}
+      ${sectionCard("Origem das vendas",chartCanvas("chartAdesoesOrigem"))}
+    </div>
+
+    <div class="card" style="padding:16px;">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
+        <div style="position:relative;flex:1;min-width:220px;max-width:320px;">
+          <span style="position:absolute;left:12px;top:33px;color:${MUTED}">${ic('search',15)}</span>
+          <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Buscar</span>
+            <input class="input" style="padding-left:34px;" placeholder="Associado ou placa…" value="${esc(st.search)}" data-action="analiseAdesoesSearch" /></label>
+        </div>
+        <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Status</span>
+          <select class="input" style="max-width:160px" data-action="analiseAdesoesStatus">
+            <option value="">Todos</option>
+            <option value="Efetivada" ${st.status==="Efetivada"?'selected':''}>Efetivada</option>
+            <option value="Pendente" ${st.status==="Pendente"?'selected':''}>Pendente</option>
+          </select></label>
+      </div>
+    </div>
+
+    ${sectionCard(`Vendas de ${monthLabel(mes)} (${filtradas.length})`,dataTable("analiseAdesoes",columns,filtradas,{sortable:true,emptyText:"Nenhuma venda com adesão neste mês."}),
+      `<button class="btn-ghost" data-action="exportAnaliseAdesoes">${ic('download',14)} Excel</button>`)}
+  </div>`;
+}
+function buildAnaliseAdesoesChartData(mesRef){
+  // evolucao diaria do mes selecionado (soma de valorAdesao por dia, efetivadas)
+  const diasNoMes=new Date(Number(mesRef.slice(0,4)),Number(mesRef.slice(5,7)),0).getDate();
+  const porDia=Array.from({length:diasNoMes},(_,i)=>{
+    const dia=String(i+1).padStart(2,"0");
+    const dataStr=`${mesRef}-${dia}`;
+    const valor=DB.vendas.filter(v=>v.data===dataStr&&toNumber(v.valorAdesao)>0).reduce((s,v)=>s+toNumber(v.valorAdesao),0);
+    return {dia:i+1,valor};
+  });
+  // ticket medio por mes (ultimos 12 meses)
+  const ultimosMeses=[]; { let m=mesRef; for(let i=0;i<12;i++){ ultimosMeses.unshift(m); m=prevMonth(m);} }
+  const ticketPorMes=ultimosMeses.map(m=>{
+    const vs=vendasDoMes(DB.vendas,m).filter(v=>toNumber(v.valorAdesao)>0);
+    const total=vs.reduce((s,v)=>s+toNumber(v.valorAdesao),0);
+    return {mes:monthLabel(m),ticket:vs.length?total/vs.length:0};
+  });
+  // origem das vendas do mes
+  const vendasDoMesArr=vendasDoMes(DB.vendas,mesRef).filter(v=>toNumber(v.valorAdesao)>0);
+  const origemCount={};
+  vendasDoMesArr.forEach(v=>{ const a=DB.associados.find(x=>x.id===v.associadoId); const o=(a&&a.origem)||"Outros"; origemCount[o]=(origemCount[o]||0)+1; });
+  const vendasPorOrigem=Object.entries(origemCount).map(([name,value])=>({name,value}));
+  const efetivadasCount=vendasDoMesArr.filter(v=>adesaoEstaPaga(v)).length;
+  const pendentesCount=vendasDoMesArr.length-efetivadasCount;
+  return {porDia,ticketPorMes,vendasPorOrigem,efetivadasCount,pendentesCount};
+}
+function drawAnaliseAdesoesCharts(){
+  const d=DB._analiseAdesoesData;
+  if(!d) return;
+  ["chartAdesoesEvolucao","chartAdesoesStatus","chartAdesoesTicket","chartAdesoesOrigem"].forEach(destroyChart);
+  const commonScales=chartCommonScales();
+
+  safeChart("chartAdesoesEvolucao",(c)=>new Chart(c,{type:"bar",data:{labels:d.porDia.map(x=>x.dia),datasets:[{data:d.porDia.map(x=>x.valor),backgroundColor:BLUE,borderRadius:4}]},
+    options:{plugins:{legend:{display:false},tooltip:{...CHART_TOOLTIP_STYLE,callbacks:{label:(ctx)=>formatBRL(ctx.parsed.y)}}},scales:commonScales,responsive:true,maintainAspectRatio:false,animation:{duration:500}}}));
+
+  safeChart("chartAdesoesStatus",(c)=>new Chart(c,{type:"doughnut",data:{labels:["Efetivadas","Pendentes"],datasets:[{data:[d.efetivadasCount,d.pendentesCount],backgroundColor:[GREEN,AMBER],borderColor:SURFACE,borderWidth:2}]},
+    options:{cutout:"62%",plugins:{legend:{position:"bottom",labels:{color:MUTED,font:{size:12}}},tooltip:CHART_TOOLTIP_STYLE},responsive:true,maintainAspectRatio:false,animation:{duration:500}}}));
+
+  safeChart("chartAdesoesTicket",(c)=>new Chart(c,{type:"line",data:{labels:d.ticketPorMes.map(x=>x.mes),datasets:[{data:d.ticketPorMes.map(x=>x.ticket),borderColor:GREEN,backgroundColor:chartAreaGradient(c,GREEN),fill:true,tension:.4,pointRadius:0,pointHoverRadius:5,borderWidth:2.5}]},
+    options:{plugins:{legend:{display:false},tooltip:{...CHART_TOOLTIP_STYLE,callbacks:{label:(ctx)=>formatBRL(ctx.parsed.y)}}},scales:commonScales,responsive:true,maintainAspectRatio:false,animation:{duration:500}}}));
+
+  if(d.vendasPorOrigem.length>0){
+    safeChart("chartAdesoesOrigem",(c)=>new Chart(c,{type:"doughnut",data:{labels:d.vendasPorOrigem.map(o=>o.name),datasets:[{data:d.vendasPorOrigem.map(o=>o.value),backgroundColor:PIE_COLORS,borderColor:SURFACE,borderWidth:2}]},
+      options:{cutout:"62%",plugins:{legend:{position:"bottom",labels:{color:MUTED,font:{size:12}}},tooltip:CHART_TOOLTIP_STYLE},responsive:true,maintainAspectRatio:false,animation:{duration:500}}}));
+  }
+}
+
+
 function renderCarteira(){
   const st=UI.carteira;
   const filtered=DB.associados
@@ -1447,6 +1567,236 @@ function renderCarteira(){
     </div>
     ${dataTable("carteira",columns,filtered,{onEdit:true,onDelete:true,onRowClick:true,emptyText:"Nenhum associado encontrado."})}
   </div>`;
+}
+
+/* ---------------- SAÚDE DA CARTEIRA (drill-down do card "Carteira") ---------------- */
+function buildSaudeCarteiraChartData(){
+  const vendas=DB.vendas;
+  const mesAtual=currentMonth();
+  const ultimosMeses=[]; { let m=mesAtual; for(let i=0;i<12;i++){ ultimosMeses.unshift(m); m=prevMonth(m);} }
+
+  const vendasComData=vendas.filter(v=>v.data);
+  const vendasAtivasHoje=vendas.filter(v=>v.status==="Ativa"&&v.data);
+  const evolucao=ultimosMeses.map(m=>({
+    mes:monthLabel(m),
+    totalVendas:vendasComData.filter(v=>v.data<=`${m}-31`).length,
+    placasAtivas:vendasAtivasHoje.filter(v=>v.data<=`${m}-31`).length,
+  }));
+
+  const crescimento=ultimosMeses.map(m=>({
+    mes:monthLabel(m),
+    entradas:vendasDoMes(vendas,m).length,
+    cancelamentos:vendas.filter(v=>(v.status==="Cancelada"||v.status==="Inativa")&&(v.dataUltimoBoletoPago||"").startsWith(m)).length,
+  }));
+
+  const retencaoMensal=ultimosMeses.map(m=>({mes:monthLabel(m),taxa:computeRetencao(vendas,m).taxaRetencao}));
+
+  // Evolução da inadimplência: contagem de vendas atualmente Inadimplentes, agrupadas pelo mês do contrato
+  // (aproximação — o sistema não guarda um histórico de mudanças de status por competência).
+  const inadimplenciaPorMes=ultimosMeses.map(m=>({mes:monthLabel(m),qtd:vendas.filter(v=>v.status==="Inadimplente"&&(v.data||"").startsWith(m)).length}));
+
+  const statusCounts={Ativas:vendas.filter(v=>v.status==="Ativa").length,Inadimplentes:vendas.filter(v=>v.status==="Inadimplente").length,Canceladas:vendas.filter(v=>v.status==="Cancelada"||v.status==="Inativa").length};
+
+  return {evolucao,crescimento,retencaoMensal,inadimplenciaPorMes,statusCounts};
+}
+function renderSaudeCarteira(){
+  const vendas=DB.vendas;
+  const mesAtual=currentMonth();
+  const fin=computeFinanceiroMes(vendas,DB.producaoEquipe,DB.indicacoes,DB.config,mesAtual,DB.equipe);
+  const saude=computeSaudeCarteira(vendas,fin);
+  const retencao=computeRetencao(vendas,mesAtual);
+  const metrics=computePortfolioMetrics(vendas);
+  const inadimplentes=vendas.filter(v=>v.status==="Inadimplente").length;
+  const canceladas=vendas.filter(v=>v.status==="Cancelada"||v.status==="Inativa").length;
+  const saudeCor=saude.nota>=75?GREEN:saude.nota>=55?AMBER:RED;
+
+  DB._saudeCarteiraData=buildSaudeCarteiraChartData();
+
+  return `<div style="display:flex;flex-direction:column;gap:20px;">
+    <button class="btn-ghost" data-action="setTab" data-tab="dashboard">${ic('arrowLeft',15)} Voltar ao Dashboard</button>
+
+    <div class="grid-2col" style="align-items:stretch;">
+      <div class="kpi ancore-card" style="border-top:3px solid ${saudeCor};display:flex;flex-direction:column;justify-content:center;">
+        <div class="lbl"><span>Índice de Saúde da Carteira</span><span class="ic-corner">${ic('trendUp',18,saudeCor)}</span></div>
+        <span class="val" style="color:${saudeCor};font-size:42px;">${saude.nota}%</span>
+        <span class="sub" style="color:${saudeCor};font-size:14px;">${esc(saude.classificacao)}</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;gap:14px;flex-wrap:wrap;">
+          ${kpiCard("cart","Total de vendas",metrics.totalPlacasVendidas)}
+          ${kpiCard("car","Placas ativas",metrics.placasAtivas,{accent:GREEN})}
+        </div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;">
+          ${kpiCard("alert","Placas inadimplentes",inadimplentes,{accent:AMBER})}
+          ${kpiCard("alert","Placas canceladas",canceladas,{accent:RED})}
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+      ${kpiCard("target","Taxa de retenção",`${retencao.taxaRetencao.toFixed(0)}%`,{accent:GREEN})}
+      ${kpiCard("trendUp","Crescimento líquido",`${retencao.crescimentoLiquido>=0?'+':''}${retencao.crescimentoLiquido}`,{accent:retencao.crescimentoLiquido>=0?GREEN:RED})}
+      ${kpiCard("clock","Tempo médio da carteira",`${saude.detalhes.tempoMedioMeses.toFixed(1)} meses`)}
+    </div>
+
+    <div class="grid-charts-2-1">
+      ${sectionCard("Evolução da carteira",chartCanvas("chartSaudeEvolucao"),null,"Vendas acumuladas x placas ativas ao longo dos últimos 12 meses.")}
+      ${sectionCard("Status da carteira",chartCanvas("chartSaudeStatus"))}
+    </div>
+    <div class="grid-2col">
+      ${sectionCard("Entradas × Cancelamentos",chartCanvas("chartSaudeCrescimento"))}
+      ${sectionCard("Retenção mensal",chartCanvas("chartSaudeRetencao"))}
+    </div>
+    ${sectionCard("Evolução da inadimplência",chartCanvas("chartSaudeInadimplencia"),null,"Aproximação com base no status atual, agrupado pelo mês do contrato — o sistema não mantém um histórico de mudanças de status por competência.")}
+  </div>`;
+}
+function drawSaudeCarteiraCharts(){
+  const d=DB._saudeCarteiraData;
+  if(!d) return;
+  ["chartSaudeEvolucao","chartSaudeStatus","chartSaudeCrescimento","chartSaudeRetencao","chartSaudeInadimplencia"].forEach(destroyChart);
+  const commonScales=chartCommonScales();
+
+  safeChart("chartSaudeEvolucao",(c)=>new Chart(c,{type:"line",data:{labels:d.evolucao.map(x=>x.mes),datasets:[
+    {label:"Total de vendas",data:d.evolucao.map(x=>x.totalVendas),borderColor:BLUE,backgroundColor:chartAreaGradient(c,BLUE),fill:true,tension:.4,pointRadius:0,pointHoverRadius:5,borderWidth:2.5},
+    {label:"Placas ativas",data:d.evolucao.map(x=>x.placasAtivas),borderColor:GREEN,backgroundColor:chartAreaGradient(c,GREEN),fill:true,tension:.4,pointRadius:0,pointHoverRadius:5,borderWidth:2.5},
+  ]},options:{plugins:{legend:{labels:{color:MUTED,font:{size:12}}},tooltip:CHART_TOOLTIP_STYLE},interaction:{mode:"index",intersect:false},scales:commonScales,responsive:true,maintainAspectRatio:false,animation:{duration:600}}}));
+
+  safeChart("chartSaudeStatus",(c)=>new Chart(c,{type:"doughnut",data:{labels:["Ativas","Inadimplentes","Canceladas"],datasets:[{data:[d.statusCounts.Ativas,d.statusCounts.Inadimplentes,d.statusCounts.Canceladas],backgroundColor:[GREEN,AMBER,RED],borderColor:SURFACE,borderWidth:2}]},
+    options:{cutout:"62%",plugins:{legend:{position:"bottom",labels:{color:MUTED,font:{size:12}}},tooltip:CHART_TOOLTIP_STYLE},responsive:true,maintainAspectRatio:false,animation:{duration:600}}}));
+
+  safeChart("chartSaudeCrescimento",(c)=>new Chart(c,{type:"bar",data:{labels:d.crescimento.map(x=>x.mes),datasets:[
+    {label:"Entradas",data:d.crescimento.map(x=>x.entradas),backgroundColor:GREEN,borderRadius:4},
+    {label:"Cancelamentos",data:d.crescimento.map(x=>-x.cancelamentos),backgroundColor:RED,borderRadius:4},
+  ]},options:{plugins:{legend:{labels:{color:MUTED,font:{size:12}}},tooltip:CHART_TOOLTIP_STYLE},scales:commonScales,responsive:true,maintainAspectRatio:false,animation:{duration:600}}}));
+
+  safeChart("chartSaudeRetencao",(c)=>new Chart(c,{type:"line",data:{labels:d.retencaoMensal.map(x=>x.mes),datasets:[{data:d.retencaoMensal.map(x=>x.taxa),borderColor:GREEN,backgroundColor:chartAreaGradient(c,GREEN),fill:true,tension:.4,pointRadius:0,pointHoverRadius:5,borderWidth:2.5}]},
+    options:{plugins:{legend:{display:false},tooltip:{...CHART_TOOLTIP_STYLE,callbacks:{label:(ctx)=>`${ctx.parsed.y.toFixed(0)}%`}}},scales:{...commonScales,y:{...commonScales.y,min:0,max:100}},responsive:true,maintainAspectRatio:false,animation:{duration:600}}}));
+
+  safeChart("chartSaudeInadimplencia",(c)=>new Chart(c,{type:"bar",data:{labels:d.inadimplenciaPorMes.map(x=>x.mes),datasets:[{data:d.inadimplenciaPorMes.map(x=>x.qtd),backgroundColor:AMBER,borderRadius:4}]},
+    options:{plugins:{legend:{display:false},tooltip:CHART_TOOLTIP_STYLE},scales:commonScales,responsive:true,maintainAspectRatio:false,animation:{duration:600}}}));
+}
+
+/* ---------------- RECEITA PREVISTA (drill-down do card "Total Previsto") ---------------- */
+function buildReceitaPrevistaChartData(mesRef){
+  const ultimosMeses=[]; { let m=mesRef; for(let i=0;i<12;i++){ ultimosMeses.unshift(m); m=prevMonth(m);} }
+  const series=ultimosMeses.map(m=>{
+    const f=computeFinanceiroMes(DB.vendas,DB.producaoEquipe,DB.indicacoes,DB.config,m,DB.equipe);
+    return {mes:monthLabel(m),receita:f.totalPrevisto,realizado:f.adesoesMes,adesoes:f.adesoesMes,consultoria:f.consultoriaPrevista,recorrencia:f.recorrenciaPrevista,planoCarreira:f.planoDeCarreiraPrevisto};
+  });
+  return {series};
+}
+function renderReceitaPrevista(){
+  const mes=UI.receitaPrevista.mes;
+  const fin=computeFinanceiroMes(DB.vendas,DB.producaoEquipe,DB.indicacoes,DB.config,mes,DB.equipe);
+  const receitaConfirmada=fin.adesoesMes;
+  const receitaPendente=fin.adesaoPrevistaTotal||0;
+  const pctRealizado=fin.totalPrevisto?(receitaConfirmada/fin.totalPrevisto)*100:0;
+
+  const composicao=[
+    {label:"Adesões efetivadas",valor:fin.adesoesMes,cor:BLUE},
+    {label:"Premiações",valor:fin.premiacaoMensal+fin.premiacaoSemanal,cor:GREEN},
+    {label:"Plano de Carreira",valor:fin.planoDeCarreiraPrevisto,cor:"#A78BFA"},
+    {label:"Consultoria",valor:fin.consultoriaPrevista,cor:GREEN_LIGHT},
+    {label:"Recorrência",valor:fin.recorrenciaPrevista,cor:AMBER},
+    {label:"Indicações (desconto)",valor:-fin.indicacoesPagas,cor:RED},
+  ];
+
+  // tabelas por origem
+  const vendasAdesao=DB.vendas.filter(v=>adesaoPagaNoMes(v,mes));
+  const mesAnterior=fin.mesAnterior;
+  const vendasConsultoria=DB.vendas.filter(v=>v.status==="Ativa"&&toNumber(v.consultoria)>0&&jaFaturandoEm(v,mesAnterior));
+  const placasRecorrencia=DB.vendas.filter(v=>v.status==="Ativa"&&jaFaturandoEm(v,mesAnterior));
+  const indicacoesPagas=DB.indicacoes.filter(i=>i.status==="Pago"&&(i.data||"").startsWith(mes));
+
+  const colsAdesao=[
+    {key:"associado",label:"Associado",render:r=>esc(associadoNome(r.associadoId))},
+    {key:"placa",label:"Placa",render:r=>esc(r.veiculoPlaca||"—")},
+    {key:"valor",label:"Valor",render:r=>formatBRL(toNumber(r.valorAdesao))},
+    {key:"dataPagamento",label:"Data de pagamento",render:r=>r.adesaoDataEfetiva?formatDateBR(r.adesaoDataEfetiva):formatDateBR(r.data)},
+  ];
+  const colsConsultoria=[
+    {key:"associado",label:"Associado",render:r=>esc(associadoNome(r.associadoId))},
+    {key:"placa",label:"Placa",render:r=>esc(r.veiculoPlaca||"—")},
+    {key:"valor",label:"Valor",render:r=>formatBRL(toNumber(r.consultoria))},
+  ];
+  const colsRecorrencia=[
+    {key:"associado",label:"Associado",render:r=>esc(associadoNome(r.associadoId))},
+    {key:"placa",label:"Placa",render:r=>esc(r.veiculoPlaca||"—")},
+    {key:"tempo",label:"Tempo de carteira",render:r=>`${monthsBetween(r.data)} meses`},
+  ];
+  const colsIndicacoes=[
+    {key:"indicador",label:"Quem indicou",render:r=>esc(associadoNome(r.indicadorId))},
+    {key:"indicado",label:"Indicado",render:r=>esc(nomeDoIndicado(r,associadoNome))},
+    {key:"valor",label:"Valor",render:r=>formatBRL(toNumber(r.valorComissao))},
+  ];
+
+  DB._receitaPrevistaData=buildReceitaPrevistaChartData(mes);
+
+  return `<div style="display:flex;flex-direction:column;gap:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+      <button class="btn-ghost" data-action="setTab" data-tab="dashboard">${ic('arrowLeft',15)} Voltar ao Dashboard</button>
+      <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Competência</span><input class="input" type="month" value="${mes}" data-action="setReceitaPrevistaMes" /></label>
+    </div>
+
+    <div style="display:flex;gap:14px;flex-wrap:wrap;">
+      ${kpiCard("dollar","Receita prevista",formatBRL(fin.totalPrevisto),{accent:BLUE})}
+      ${kpiCard("check" in ICONS?"check":"target","Receita confirmada",formatBRL(receitaConfirmada),{accent:GREEN})}
+      ${kpiCard("clock","Receita pendente",formatBRL(receitaPendente),{accent:AMBER})}
+      ${kpiCard("trendUp","Percentual realizado",`${pctRealizado.toFixed(0)}%`)}
+    </div>
+
+    ${sectionCard("Composição da receita",`<div style="display:flex;flex-direction:column;gap:8px;font-size:13.5px;">
+      ${composicao.map(c=>`<div style="display:flex;justify-content:space-between;align-items:center;"><span style="color:${MUTED};display:flex;align-items:center;gap:8px;"><span style="width:9px;height:9px;border-radius:3px;background:${c.cor};display:inline-block;"></span>${esc(c.label)}</span><b style="color:${c.valor<0?RED_DARK:'#fff'}">${c.valor<0?'-':''}${formatBRL(Math.abs(c.valor))}</b></div>`).join("")}
+      <div style="border-top:1px solid ${SILVER};margin-top:6px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700;font-size:15px;"><span>Total previsto</span><span style="color:${BLUE}">${formatBRL(fin.totalPrevisto)}</span></div>
+    </div>`)}
+
+    <div class="grid-charts-2-1">
+      ${sectionCard("Distribuição percentual das receitas",chartCanvas("chartReceitaDistribuicao"))}
+      ${sectionCard("Evolução da receita prevista",chartCanvas("chartReceitaEvolucao"))}
+    </div>
+    <div class="grid-2col">
+      ${sectionCard("Receita prevista × realizada",chartCanvas("chartReceitaRealizada"))}
+      ${sectionCard("Evolução mensal por categoria",chartCanvas("chartReceitaCategorias"))}
+    </div>
+
+    ${sectionCard(`Adesões (${vendasAdesao.length})`,dataTable("receitaAdesoes",colsAdesao,vendasAdesao,{emptyText:"Nenhuma adesão efetivada neste mês."}))}
+    ${sectionCard("Premiações",`<div style="display:flex;flex-direction:column;gap:8px;font-size:13.5px;">
+      <div style="display:flex;justify-content:space-between;"><span style="color:${MUTED}">Premiação mensal (produção de ${monthLabel(mesAnterior)})</span><b>${formatBRL(fin.premiacaoMensal)}</b></div>
+      <div style="display:flex;justify-content:space-between;"><span style="color:${MUTED}">Premiação semanal</span><b>${formatBRL(fin.premiacaoSemanal)}</b></div>
+    </div>`)}
+    ${sectionCard(`Consultoria (${vendasConsultoria.length})`,dataTable("receitaConsultoria",colsConsultoria,vendasConsultoria,{emptyText:"Nenhuma consultoria prevista neste mês."}))}
+    ${sectionCard("Plano de Carreira",`<div style="font-size:13.5px;display:flex;justify-content:space-between;"><span style="color:${MUTED}">Nível: ${esc(fin.faixa.nivel)}</span><b>${formatBRL(fin.planoDeCarreiraPrevisto)}</b></div>`)}
+    ${sectionCard(`Recorrência (${placasRecorrencia.length})`,dataTable("receitaRecorrencia",colsRecorrencia,placasRecorrencia,{emptyText:"Nenhuma placa elegível para recorrência neste mês."}))}
+    ${sectionCard(`Indicações pagas (${indicacoesPagas.length})`,dataTable("receitaIndicacoes",colsIndicacoes,indicacoesPagas,{emptyText:"Nenhuma indicação paga neste mês."}))}
+  </div>`;
+}
+function drawReceitaPrevistaCharts(){
+  const d=DB._receitaPrevistaData;
+  if(!d) return;
+  const {series}=d;
+  ["chartReceitaDistribuicao","chartReceitaEvolucao","chartReceitaRealizada","chartReceitaCategorias"].forEach(destroyChart);
+  const commonScales=chartCommonScales();
+  const ultimo=series[series.length-1];
+
+  const distLabels=["Adesões","Consultoria","Recorrência","Plano de Carreira"];
+  const distValues=[ultimo.adesoes,ultimo.consultoria,ultimo.recorrencia,ultimo.planoCarreira];
+  safeChart("chartReceitaDistribuicao",(c)=>new Chart(c,{type:"doughnut",data:{labels:distLabels,datasets:[{data:distValues,backgroundColor:PIE_COLORS,borderColor:SURFACE,borderWidth:2}]},
+    options:{cutout:"62%",plugins:{legend:{position:"bottom",labels:{color:MUTED,font:{size:12}}},tooltip:{...CHART_TOOLTIP_STYLE,callbacks:{label:(ctx)=>`${ctx.label}: ${formatBRL(ctx.parsed)}`}}},responsive:true,maintainAspectRatio:false,animation:{duration:600}}}));
+
+  safeChart("chartReceitaEvolucao",(c)=>new Chart(c,{type:"line",data:{labels:series.map(s=>s.mes),datasets:[{data:series.map(s=>s.receita),borderColor:BLUE,backgroundColor:chartAreaGradient(c,BLUE),fill:true,tension:.4,pointRadius:0,pointHoverRadius:5,borderWidth:2.5}]},
+    options:{plugins:{legend:{display:false},tooltip:{...CHART_TOOLTIP_STYLE,callbacks:{label:(ctx)=>formatBRL(ctx.parsed.y)}}},scales:commonScales,responsive:true,maintainAspectRatio:false,animation:{duration:600}}}));
+
+  safeChart("chartReceitaRealizada",(c)=>new Chart(c,{type:"bar",data:{labels:series.map(s=>s.mes),datasets:[
+    {label:"Previsto",data:series.map(s=>s.receita),backgroundColor:BLUE,borderRadius:4},
+    {label:"Realizado (adesões)",data:series.map(s=>s.realizado),backgroundColor:GREEN,borderRadius:4},
+  ]},options:{plugins:{legend:{labels:{color:MUTED,font:{size:12}}},tooltip:{...CHART_TOOLTIP_STYLE,callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${formatBRL(ctx.parsed.y)}`}}},scales:commonScales,responsive:true,maintainAspectRatio:false,animation:{duration:600}}}));
+
+  safeChart("chartReceitaCategorias",(c)=>new Chart(c,{type:"line",data:{labels:series.map(s=>s.mes),datasets:[
+    {label:"Adesões",data:series.map(s=>s.adesoes),borderColor:BLUE,tension:.4,pointRadius:0,borderWidth:2.5,fill:false},
+    {label:"Consultoria",data:series.map(s=>s.consultoria),borderColor:GREEN,tension:.4,pointRadius:0,borderWidth:2.5,fill:false},
+    {label:"Recorrência",data:series.map(s=>s.recorrencia),borderColor:AMBER,tension:.4,pointRadius:0,borderWidth:2.5,fill:false},
+    {label:"Plano de Carreira",data:series.map(s=>s.planoCarreira),borderColor:"#A78BFA",tension:.4,pointRadius:0,borderWidth:2.5,fill:false},
+  ]},options:{plugins:{legend:{labels:{color:MUTED,font:{size:12}}},tooltip:{...CHART_TOOLTIP_STYLE,callbacks:{label:(ctx)=>`${ctx.dataset.label}: ${formatBRL(ctx.parsed.y)}`}}},interaction:{mode:"index",intersect:false},scales:commonScales,responsive:true,maintainAspectRatio:false,animation:{duration:600}}}));
 }
 
 /* ---------------- FICHA DO ASSOCIADO ---------------- */
@@ -1732,18 +2082,29 @@ function renderRecorrencia(){
   </div>`;
 }
 
-/* ---------------- CONSULTORIAS ATIVAS (detalhe do card do Dashboard) ---------------- */
-function computeConsultoriasAtivasList(){
-  const mes=currentMonth();
-  const mesAnterior=prevMonth(mes);
-  // mesmo criterio usado em computeFinanceiroMes para compor a Consultoria Prevista
-  return DB.vendas.filter(v=>v.status==="Ativa"&&toNumber(v.consultoria)>0&&jaFaturandoEm(v,mesAnterior));
+/* ---------------- CONSULTORIAS (painel completo, extensão de Vendas) ---------------- */
+const CONSULTORIA_STATUS_ATIVOS=["Ativa","Ativa Pendente"];
+function situacaoConsultoria(status){ return CONSULTORIA_STATUS_ATIVOS.includes(status)?"Ativa":"Inativa"; }
+function consultoriaStatusTone(status){
+  if(status==="Ativa"||status==="Ativa Pendente") return "green";
+  if(status==="Inadimplente") return "amber";
+  if(status==="Cancelada"||status==="Inativa") return "red";
+  return "gray";
+}
+function computeConsultoriasList(){
+  // Toda venda com consultoria > 0, de qualquer status — a situação (Ativa/Inativa) é
+  // herdada automaticamente do status da venda, sem campo próprio armazenado.
+  return DB.vendas.filter(v=>toNumber(v.consultoria)>0).map(v=>({...v,_situacao:situacaoConsultoria(v.status)}));
 }
 function renderConsultoriasAtivas(){
   const st=UI.consultoriasAtivas;
-  const lista=computeConsultoriasAtivasList();
+  const lista=computeConsultoriasList();
+  const mes=currentMonth();
+  const finMes=computeFinanceiroMes(DB.vendas,DB.producaoEquipe,DB.indicacoes,DB.config,mes,DB.equipe);
 
+  const rapido=st.rapido||"todas"; // todas | ativas | inativas
   const filtrada=lista
+    .filter(v=>rapido==="todas"||(rapido==="ativas"?v._situacao==="Ativa":v._situacao==="Inativa"))
     .filter(v=>!st.faixa||String(toNumber(v.consultoria))===st.faixa)
     .filter(v=>!st.status||v.status===st.status)
     .filter(v=>!st.inicio||(v.data||"")>=st.inicio)
@@ -1751,8 +2112,9 @@ function renderConsultoriasAtivas(){
     .filter(v=>{ if(!st.search) return true; const s=st.search.trim().toLowerCase(); return [associadoNome(v.associadoId),v.veiculoPlaca].some(x=>(x||"").toLowerCase().includes(s)); });
 
   const total=lista.length;
-  const valorTotal=lista.reduce((s,v)=>s+toNumber(v.consultoria),0);
-  const valorMedio=total?valorTotal/total:0;
+  const ativasCount=lista.filter(v=>v._situacao==="Ativa").length;
+  const inativasCount=total-ativasCount;
+  const valorMedioGeral=total?lista.reduce((s,v)=>s+toNumber(v.consultoria),0)/total:0;
   const distribuicao=CONSULTORIA_VALORES.map(v=>({valor:v,qtd:lista.filter(x=>toNumber(x.consultoria)===v).length}));
 
   const columns=[
@@ -1762,7 +2124,8 @@ function renderConsultoriasAtivas(){
     {key:"consultoria",label:"Valor da consultoria",render:r=>formatBRL(toNumber(r.consultoria))},
     {key:"primeiroBoleto",label:"1º boleto",render:r=>formatDateBR(getPrimeiroBoleto(r))},
     {key:"ultimoBoletoPago",label:"Último boleto pago",render:r=>r.dataUltimoBoletoPago?formatDateBR(r.dataUltimoBoletoPago):"—"},
-    {key:"status",label:"Status",render:r=>badge(r.status,statusTone(r.status))},
+    {key:"status",label:"Status da venda",render:r=>badge(r.status,consultoriaStatusTone(r.status))},
+    {key:"situacao",label:"Situação da consultoria",render:r=>badge(r._situacao,r._situacao==="Ativa"?"green":"red")},
     {key:"tempo",label:"Tempo de consultoria",render:r=>`${monthsBetween(getPrimeiroBoleto(r))} meses`},
   ];
 
@@ -1770,9 +2133,11 @@ function renderConsultoriasAtivas(){
     <button class="btn-ghost" data-action="setTab" data-tab="dashboard">${ic('arrowLeft',15)} Voltar ao Dashboard</button>
 
     <div style="display:flex;gap:14px;flex-wrap:wrap;">
-      ${kpiCard("usercog","Total de consultorias ativas",total)}
-      ${kpiCard("dollar","Valor total previsto",formatBRL(valorTotal))}
-      ${kpiCard("trendUp","Valor médio por consultoria",formatBRL(valorMedio))}
+      ${kpiCard("clipboard","Total de consultorias",total)}
+      ${kpiCard("usercog","Consultorias ativas",ativasCount,{accent:GREEN})}
+      ${kpiCard("alert","Consultorias inativas",inativasCount,{accent:RED})}
+      ${kpiCard("dollar","Valor total previsto",formatBRL(finMes.consultoriaPrevista))}
+      ${kpiCard("trendUp","Valor médio por consultoria",formatBRL(valorMedioGeral))}
     </div>
 
     ${sectionCard("Distribuição por faixa",`<div class="grid-3col">${distribuicao.map(d=>`
@@ -1782,6 +2147,11 @@ function renderConsultoriasAtivas(){
       </div>`).join("")}</div>`)}
 
     <div class="card" style="padding:16px;">
+      <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <button class="btn-ghost ${rapido==='todas'?'active':''}" data-action="consAtivasRapido" data-valor="todas">Todas</button>
+        <button class="btn-ghost ${rapido==='ativas'?'active':''}" data-action="consAtivasRapido" data-valor="ativas">Ativas</button>
+        <button class="btn-ghost ${rapido==='inativas'?'active':''}" data-action="consAtivasRapido" data-valor="inativas">Inativas</button>
+      </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:end;">
         <div style="position:relative;flex:1;min-width:220px;max-width:320px;">
           <span style="position:absolute;left:12px;top:33px;color:${MUTED}">${ic('search',15)}</span>
@@ -1793,7 +2163,7 @@ function renderConsultoriasAtivas(){
             <option value="">Todas</option>
             ${CONSULTORIA_VALORES.map(v=>`<option value="${v}" ${st.faixa===String(v)?'selected':''}>${formatBRL(v)}</option>`).join("")}
           </select></label>
-        <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Status</span>
+        <label style="display:flex;flex-direction:column;gap:6px;"><span class="field-label">Status da venda</span>
           <select class="input" style="max-width:160px" data-action="consAtivasStatus">
             <option value="">Todos</option>
             ${VENDA_STATUS_OPTS.map(o=>`<option value="${esc(o)}" ${st.status===o?'selected':''}>${esc(o)}</option>`).join("")}
@@ -1803,7 +2173,7 @@ function renderConsultoriasAtivas(){
       </div>
     </div>
 
-    ${sectionCard(`Consultorias ativas (${filtrada.length})`,dataTable("consultoriasAtivas",columns,filtrada,{sortable:true,emptyText:"Nenhuma consultoria ativa encontrada para os filtros selecionados."}))}
+    ${sectionCard(`Consultorias (${filtrada.length})`,dataTable("consultoriasAtivas",columns,filtrada,{sortable:true,emptyText:"Nenhuma consultoria encontrada para os filtros selecionados."}))}
   </div>`;
 }
 
@@ -2133,6 +2503,12 @@ function render(){
       content=renderRecorrencia();
     }else if(UI.tab==="consultoriasAtivas"){
       content=renderConsultoriasAtivas();
+    }else if(UI.tab==="analiseAdesoes"){
+      content=renderAnaliseAdesoes();
+    }else if(UI.tab==="saudeCarteira"){
+      content=renderSaudeCarteira();
+    }else if(UI.tab==="receitaPrevista"){
+      content=renderReceitaPrevista();
     }else if(UI.tab==="aniversariantes"){
       content=renderAniversariantes();
     }else if(UI.tab==="indicacoes"){
@@ -2193,6 +2569,9 @@ ${esc((err&&err.stack)||"")}</pre>
   document.getElementById("modalRoot").innerHTML=renderModal()+renderDocViewer();
 
   if(UI.tab==="dashboard" && !LOADING){ try{ drawDashboardCharts(); }catch(err){ console.error("Erro ao desenhar gráficos do dashboard",err); } }
+  if(UI.tab==="analiseAdesoes" && !LOADING){ try{ drawAnaliseAdesoesCharts(); }catch(err){ console.error("Erro ao desenhar gráficos de adesões",err); } }
+  if(UI.tab==="saudeCarteira" && !LOADING){ try{ drawSaudeCarteiraCharts(); }catch(err){ console.error("Erro ao desenhar gráficos de saúde da carteira",err); } }
+  if(UI.tab==="receitaPrevista" && !LOADING){ try{ drawReceitaPrevistaCharts(); }catch(err){ console.error("Erro ao desenhar gráficos de receita prevista",err); } }
 }
 
 /* ---------------- EVENT DELEGATION ---------------- */
@@ -2204,7 +2583,12 @@ document.addEventListener("click",function(e){
   if(action==="overlayClose"){ if(e.target===t) closeModal(); return; }
   if(action==="closeModal"){ closeModal(); return; }
   if(action==="toggleSidebar"){ UI.sidebarOpen=!UI.sidebarOpen; rerender(); return; }
-  if(action==="setTab"){ UI.tab=t.getAttribute("data-tab"); UI.selectedAssociadoId=null; UI.selectedConsultorId=null; rerender(); return; }
+  if(action==="setTab"){
+    UI.tab=t.getAttribute("data-tab"); UI.selectedAssociadoId=null; UI.selectedConsultorId=null;
+    const filtroConsultoria=t.getAttribute("data-filtro-consultoria");
+    if(UI.tab==="consultoriasAtivas" && filtroConsultoria){ UI.consultoriasAtivas.rapido=filtroConsultoria; }
+    rerender(); return;
+  }
   if(action==="globalResultClick"){
     const idx=parseInt(t.getAttribute("data-idx"),10);
     const r=DB._globalResults[idx];
@@ -2242,6 +2626,7 @@ document.addEventListener("click",function(e){
   if(action==="novaVenda"){ if(DB.associados.length===0){ alert("Cadastre um associado na Carteira antes de lançar uma venda."); return; } openModal({kind:"crud",title:"Nova venda",schema:VENDA_SCHEMA,draft:{adesaoStatus:"Pendente",status:"Ativa"},coll:"vendas",requiredKey:"associadoId",wide:true,extra:"vendaDocs"}); return; }
   if(action==="toggleFiltrosVendas"){ UI.vendas.showFiltros=!UI.vendas.showFiltros; rerender(); return; }
   if(action==="abrirAssociadoDaVenda"){ UI.tab="carteira"; UI.selectedAssociadoId=t.getAttribute("data-id"); rerender(); return; }
+  if(action==="consAtivasRapido"){ UI.consultoriasAtivas.rapido=t.getAttribute("data-valor"); rerender(); return; }
 
   /* Financeiro */
   if(action==="novaDespesa"){ openModal({kind:"crud",title:"Lançar despesas/outras receitas",schema:DESPESA_SCHEMA,draft:{},coll:"despesas",requiredKey:"competencia"}); return; }
@@ -2305,6 +2690,12 @@ document.addEventListener("click",function(e){
     return;
   }
   if(action==="printRelatorio"){ window.print(); return; }
+  if(action==="exportAnaliseAdesoes"){
+    const reg=DB._tableRegistry&&DB._tableRegistry["analiseAdesoes"];
+    const rows=(reg?reg.rows:[]).map(v=>({data:v.data,associado:associadoNome(v.associadoId),placa:v.veiculoPlaca,valorAdesao:toNumber(v.valorAdesao),statusAdesao:adesaoEstaPaga(v)?"Efetivada":"Pendente",dataPrevista:v.adesaoDataPrevista||"",dataPagamento:v.adesaoDataEfetiva||""}));
+    exportXLSX(rows,"aurum-analise-adesoes.xlsx","Adesões");
+    return;
+  }
   if(action==="refreshDashboard"){ rerender(); return; }
 
   /* Backup */
@@ -2380,6 +2771,10 @@ document.addEventListener("input",function(e){
   if(action==="consAtivasStatus"){ UI.consultoriasAtivas.status=t.value; rerender(); return; }
   if(action==="consAtivasInicio"){ UI.consultoriasAtivas.inicio=t.value; rerender(); return; }
   if(action==="consAtivasFim"){ UI.consultoriasAtivas.fim=t.value; rerender(); return; }
+  if(action==="setAnaliseAdesoesMes"){ UI.analiseAdesoes.mes=t.value; rerender(); return; }
+  if(action==="setReceitaPrevistaMes"){ UI.receitaPrevista.mes=t.value; rerender(); return; }
+  if(action==="analiseAdesoesSearch"){ UI.analiseAdesoes.search=t.value; rerender(); return; }
+  if(action==="analiseAdesoesStatus"){ UI.analiseAdesoes.status=t.value; rerender(); return; }
   if(action==="setCargo"){ persistConfig({...DB.config,meuCargo:t.value}).then(rerender); return; }
   if(action==="setParticipaPlanoCarreira"){
     persistConfig({...DB.config,participaPlanoCarreira:t.value}).then(()=>{
